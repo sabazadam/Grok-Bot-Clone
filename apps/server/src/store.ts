@@ -333,6 +333,13 @@ export function resolveApproval(id: string, status: "approved" | "rejected"): Ap
   return getApproval(id);
 }
 
+export function listApprovalsByConversation(conversationId: string): Approval[] {
+  return getDb()
+    .prepare(`SELECT * FROM approvals WHERE conversation_id=? ORDER BY created_at ASC`)
+    .all(conversationId)
+    .map(rowToApproval);
+}
+
 // ── memories ────────────────────────────────────────────────────────────
 
 export function addMemory(agentId: string, kind: MemoryKind, content: string): MemoryEntry {

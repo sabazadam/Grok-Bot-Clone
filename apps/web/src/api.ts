@@ -51,6 +51,7 @@ export const api = {
     req<Conversation>("/api/conversations", { method: "POST", body: JSON.stringify({ title, agentIds }) }),
   deleteConversation: (id: string) => req(`/api/conversations/${id}`, { method: "DELETE" }),
   messages: (convId: string) => req<Message[]>(`/api/conversations/${convId}/messages`),
+  approvals: (convId: string) => req<Approval[]>(`/api/conversations/${convId}/approvals`),
   sendMessage: (convId: string, text: string) =>
     req<Message>(`/api/conversations/${convId}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
   approve: (approvalId: string) => req<Approval>(`/api/approvals/${approvalId}/approve`, { method: "POST" }),

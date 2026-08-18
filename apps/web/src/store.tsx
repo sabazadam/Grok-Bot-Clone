@@ -25,6 +25,7 @@ type Action =
   | { type: "init"; config: AppConfig; agents: Agent[]; conversations: Conversation[] }
   | { type: "select"; id: string | null }
   | { type: "messages_loaded"; convId: string; messages: Message[] }
+  | { type: "approvals_loaded"; approvals: Approval[] }
   | { type: "event"; event: ServerEvent }
   | { type: "agents"; agents: Agent[] };
 
@@ -46,6 +47,11 @@ function reducer(state: State, action: Action): State {
       return { ...state, selectedId: action.id };
     case "messages_loaded":
       return { ...state, messages: { ...state.messages, [action.convId]: action.messages } };
+    case "approvals_loaded": {
+      const approvals = { ...state.approvals };
+      for (const a of action.approvals) approvals[a.id] = a;
+      return { ...state, approvals };
+    }
     case "event": {
       const e = action.event;
       switch (e.type) {
@@ -160,6 +166,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         dispatch({ type: "select", id });
         if (id && !state.messages[id]) {
           void api.messages(id).then((messages) => dispatch({ type: "messages_loaded", convId: id, messages }));
+          void api.approvals(id).then((approvals) => dispatch({ type: "approvals_loaded", approvals }));
         }
       },
     }),

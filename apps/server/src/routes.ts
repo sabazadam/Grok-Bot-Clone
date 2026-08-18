@@ -186,6 +186,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return store.listMessages(id);
   });
 
+  app.get("/api/conversations/:id/approvals", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getConversation(id)) return reply.code(404).send({ error: "not found" });
+    return store.listApprovalsByConversation(id);
+  });
+
   app.post("/api/conversations/:id/messages", async (req, reply) => {
     const { id } = req.params as { id: string };
     const conv = store.getConversation(id);
