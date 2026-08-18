@@ -21,6 +21,8 @@ export class MockAdapter implements ModelAdapter {
   private counter = 0;
   private notes: string[] = [];
   private approvalRejected = false;
+  private fromTeammate = false;
+  private hadDirectives = false;
 
   constructor(private init: AdapterInit) {}
 
@@ -29,18 +31,29 @@ export class MockAdapter implements ModelAdapter {
   }
 
   private plan(prompt: string): void {
-    const lines = prompt.split(/\n|(?<=\.)\s+/);
+    // Only parse directives from the NEW message, not the transcript context
+    // (the runner prefixes prompts with "Recent conversation:" + "New message from …:").
+    const marker = prompt.lastIndexOf("New message from");
+    let effective = prompt;
+    if (marker >= 0) {
+      const nl = prompt.indexOf("\n", marker);
+      if (nl >= 0) effective = prompt.slice(nl + 1);
+    }
+    const lines = effective.split(/\n|(?<=\.)\s+/);
     for (const raw of lines) {
-      const line = raw.trim();
+      // strip leading @mentions ("@Milo run: ..." → "run: ...")
+      const line = raw.trim().replace(/^(@\S+[,:]?\s+)+/, "");
       let m: RegExpMatchArray | null;
-      if ((m = line.match(/open the browser to (\S+)/i))) {
+      if ((m = line.match(/tell @(\S+):\s*(.+)$/i))) {
+        this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
+      } else if ((m = line.match(/open the browser to (\S+)/i))) {
         this.queue.push({
           id: this.id(),
           tool: "bash",
           command: `DISPLAY=:0 nohup /usr/local/bin/browser '${m[1]!.replace(/'/g, "")}' >/dev/null 2>&1 & sleep 5; echo opened`,
         });
         this.queue.push({ id: this.id(), tool: "computer", action: { type: "screenshot" } });
-      } else if ((m = line.match(/run:\s*(.+)$/i))) {
+      } else if ((m = line.match(/^run:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "bash", command: m[1]! });
       } else if ((m = line.match(/type into a terminal:\s*(.+)$/i))) {
         this.queue.push({
@@ -54,13 +67,13 @@ export class MockAdapter implements ModelAdapter {
         this.queue.push({ id: this.id(), tool: "bash", command: `mkdir -p "$(dirname '${m[1]}')" && printf '%s\\n' '${m[2]!.replace(/'/g, "'\\''")}' > '${m[1]}' && cat '${m[1]}'` });
       } else if ((m = line.match(/ask approval to (.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "request_approval", description: m[1]!, reason: "The task asked me to get your sign-off first." });
-      } else if ((m = line.match(/tell @(\S+):\s*(.+)$/i))) {
-        this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
-      } else if ((m = line.match(/remember:\s*(.+)$/i))) {
+      } else if ((m = line.match(/^remember:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "update_memory", memoryKind: "fact", content: m[1]! });
       }
     }
-    if (this.queue.length === 0) {
+    this.fromTeammate = /New message from your teammate/.test(prompt);
+    this.hadDirectives = this.queue.length > 0;
+    if (this.queue.length === 0 && !this.fromTeammate) {
       this.queue.push({ id: this.id(), tool: "computer", action: { type: "screenshot" } });
     }
   }
@@ -86,6 +99,10 @@ export class MockAdapter implements ModelAdapter {
     if (!inv) {
       if (this.approvalRejected) {
         return { kind: "final", text: "Understood — I stopped there and won't proceed without your approval." };
+      }
+      // teammate messages that needed no action end the thread with the ACK convention
+      if (this.fromTeammate && !this.hadDirectives) {
+        return { kind: "final", text: "ACK" };
       }
       const summary = this.notes.length > 0 ? `Done. Output:\n${this.notes.join("\n")}` : "Done (mock run complete).";
       return { kind: "final", text: summary };

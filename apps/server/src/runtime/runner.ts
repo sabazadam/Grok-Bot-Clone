@@ -218,6 +218,18 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     postAgentText(agent, conversation.id, finalText);
   }
 
+  // agent DM: the reply wakes the original sender so the exchange can continue
+  // (dispatchAgentMessage enforces the per-request turn budget; "ACK" ends the thread)
+  if (!failed && conversation.kind === "agent_dm" && opts.triggeredBy.kind === "agent" && finalText && !isAck) {
+    dispatchAgentMessage({
+      fromAgentId: agent.id,
+      toAgentId: opts.triggeredBy.agentId,
+      conversationId: conversation.id,
+      text: finalText,
+      rootMessageId: opts.rootMessageId,
+    });
+  }
+
   // group-chat handoffs: @mentions in the final reply wake those agents
   if (!failed && conversation.kind === "group" && finalText && !isAck) {
     const others = conversation.agentIds.filter((id) => id !== agent.id).map((id) => store.getAgent(id)).filter((a): a is Agent => !!a);
