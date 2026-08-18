@@ -17,6 +17,16 @@ const SCRIPT: { name: string; input: Record<string, unknown> }[][] = [
   [{ name: 'remember', input: { note: 'Completed the scripted mock demo once.' } }],
 ];
 
+function lastUserText(req: ChatRequest): string {
+  for (let i = req.turns.length - 1; i >= 0; i--) {
+    const turn = req.turns[i];
+    if (turn.role !== 'user') continue;
+    const texts = turn.content.filter((p) => p.type === 'text');
+    if (texts.length) return texts.map((p) => (p.type === 'text' ? p.text : '')).join('\n');
+  }
+  return '';
+}
+
 export const mockProvider: Provider = {
   async chat(req: ChatRequest): Promise<ChatResponse> {
     await new Promise((r) => setTimeout(r, 400));
@@ -28,6 +38,22 @@ export const mockProvider: Provider = {
       const turn = req.turns[i];
       if (turn.role === 'assistant') step++;
       if (turn.role === 'user' && turn.content.some((p) => p.type === 'text')) break;
+    }
+
+    // "handoff:<AgentName> <task>" exercises the agent-to-agent path offline.
+    const handoff = lastUserText(req).match(/^handoff:(\S+)\s+(.+)/s);
+    if (handoff) {
+      if (step === 0) {
+        return {
+          text: `Handing this off to ${handoff[1]}.`,
+          toolCalls: [{
+            id: `mock_${assistantTurns}_0`,
+            name: 'message_agent',
+            input: { agent_name: handoff[1], message: handoff[2] },
+          }],
+        };
+      }
+      return { text: `Done — I asked ${handoff[1]} to take it from here.`, toolCalls: [] };
     }
 
     if (step < SCRIPT.length) {
