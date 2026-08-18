@@ -1,0 +1,12 @@
+#!/bin/sh
+# Chromium wrapper for the agent computer. The container has no user-namespace
+# support, so the sandbox must be disabled; isolation comes from the container.
+exec chromium \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --disable-gpu \
+  --no-first-run \
+  --no-default-browser-check \
+  --window-position=0,0 \
+  --window-size=1280,800 \
+  "$@"
