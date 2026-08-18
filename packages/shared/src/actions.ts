@@ -24,7 +24,9 @@ export type ComputerAction =
   | { type: "key"; key: string }
   | { type: "hold_key"; key: string; durationMs: number }
   | { type: "wait"; durationMs: number }
-  | { type: "cursor_position" };
+  | { type: "cursor_position" }
+  /** Sequence of primitive actions executed in order (e.g. Gemini's type_text_at = click+clear+type+enter). */
+  | { type: "batch"; steps: ComputerAction[]; description?: string };
 
 /** Actions an agent can take beyond the computer (tools in the agent loop). */
 export type AgentTool =

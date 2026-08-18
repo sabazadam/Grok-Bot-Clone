@@ -13,7 +13,7 @@ export const PROVIDER_LABELS: Record<Provider, string> = {
 export const PROVIDER_DEFAULT_MODELS: Record<Provider, string> = {
   anthropic: "claude-sonnet-4-5",
   openai: "computer-use-preview",
-  google: "gemini-2.5-computer-use-preview-10-2025",
+  google: "gemini-3.6-flash",
   generic: "grok-4",
 };
 
