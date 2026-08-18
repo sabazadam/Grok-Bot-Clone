@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #090a0c;
+  --sidebar: #101114;
+  --panel: #16181d;
+  --raised: #1c1f26;
+  --border: #2a2e37;
+  --text: #eef0f4;
+  --muted: #8b909b;
+  --gold: #f4b942;
+  --danger: #ff6b7a;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-sidebar: var(--sidebar);
+  --color-panel: var(--panel);
+  --color-raised: var(--raised);
+  --color-border: var(--border);
+  --color-ink: var(--text);
+  --color-muted: var(--muted);
+  --color-gold: var(--gold);
+  --color-danger: var(--danger);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2e37 transparent;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.desktop-cursor {
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0 8px 14px 8px;
+  border-color: transparent transparent #fff transparent;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.65));
+  transform: rotate(-28deg);
+}

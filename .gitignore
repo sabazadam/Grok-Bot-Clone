@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+.turbo
+data
+*.db
+*.db-journal
+.env
+.env.local
+.DS_Store
+apps/web/.next
+apps/web/node_modules
