@@ -17,6 +17,14 @@ your own machine (built for an Apple Silicon Mac mini).
   stop and ask you first, showing the exact pending command. Passwords/2FA use **Take over**:
   you drive the agent's screen directly while the agent pauses.
 - **Memory** — agents keep durable preferences, facts, and task summaries per agent.
+- **Stealth browsing** (per-agent, on by default) — the agent's browser is hardened against
+  fingerprinting: realistic user-agent/timezone/locale, a bundled extension that spoofs the WebGL
+  vendor/renderer (masking the software renderer), adds canvas/audio noise, and hides automation
+  signals. Because agents drive a *real* desktop via OS-level input (not WebDriver/CDP),
+  `navigator.webdriver` is already absent and there's no headless UA — this closes the remaining
+  VM/fingerprint tells. Toggle it per agent; it applies live (no restart).
+- **Grok Bot–style UI** — light iMessage look by default with a one-click dark theme, color-coded
+  agents, duplicate / hide-from-sidebar, and a friendly onboarding state.
 - **Multi-model** — pick a provider per agent:
 
 | Provider | Computer-use path | Default model |
@@ -86,6 +94,9 @@ Copy `.env.example` → `.env`. Notable settings:
 | `COMPUTER_RESOLUTION` | 1280x800 | desktop size per agent |
 | `MAX_TASK_STEPS` | 60 | per-task action cap |
 | `MAX_AGENT_TURNS` | 8 | agent↔agent turns per user request (loop prevention) |
+| `BROWSER_USER_AGENT` | current desktop Chrome UA | UA presented by stealth browsing |
+| `BROWSER_TIMEZONE` | `America/New_York` | timezone the stealth browser reports |
+| `BROWSER_LOCALE` | `en-US` | locale the stealth browser reports |
 
 ## Development
 
