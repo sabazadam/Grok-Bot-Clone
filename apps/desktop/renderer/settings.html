@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+    <title>GrokBot Settings</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; }
+      body { margin: 0; padding: 22px; background: #ffffff; color: #1c1c1e; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      p.sub { margin: 0 0 18px; color: #8a8a8e; font-size: 13px; }
+      .card { border: 1px solid #e2e2e6; border-radius: 14px; padding: 14px; margin-bottom: 12px; cursor: pointer; }
+      .card.sel { border-color: #0a84ff; box-shadow: 0 0 0 2px rgba(10,132,255,0.15); }
+      .card h2 { font-size: 14px; margin: 0 0 4px; }
+      .card p { font-size: 12px; margin: 0; color: #6a6a6e; }
+      label { display: block; font-size: 12px; font-weight: 600; color: #6a6a6e; margin: 12px 0 4px; }
+      input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #e2e2e6; border-radius: 10px; font-size: 13px; }
+      .row { display: flex; gap: 8px; }
+      .row input { flex: 1; }
+      button { border: none; border-radius: 999px; padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer; }
+      button.primary { background: #0a84ff; color: #fff; }
+      button.ghost { background: #ececee; color: #1c1c1e; }
+      .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+      .hidden { display: none; }
+      .hint { font-size: 11px; color: #8a8a8e; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <h1>How will you use GrokBot?</h1>
+    <p class="sub">You can change this anytime from the GrokBot menu → Settings.</p>
+
+    <div class="card" id="card-local" data-mode="local">
+      <h2>Run on this device</h2>
+      <p>Start the GrokBot server here and use it locally. Requires Docker + Node on this machine.</p>
+    </div>
+    <div class="card" id="card-remote" data-mode="remote">
+      <h2>Connect to a server (commander)</h2>
+      <p>This machine is a client. Point it at a GrokBot server running elsewhere — e.g. your Mac mini over Tailscale.</p>
+    </div>
+
+    <div id="local-opts" class="hidden">
+      <label>GrokBot install folder (contains <code>apps/server</code>)</label>
+      <div class="row">
+        <input id="repoPath" placeholder="/Users/you/GrokBot" />
+        <button class="ghost" id="browse">Browse…</button>
+      </div>
+      <div class="hint">The server runs from here using your system Node (so native modules & the agent image are reused).</div>
+    </div>
+
+    <div id="remote-opts" class="hidden">
+      <label>Server URL</label>
+      <input id="remoteUrl" placeholder="http://100.x.y.z:8484  (your Mac mini's Tailscale IP)" />
+      <div class="hint">Use the URL your Mac mini serves — e.g. its Tailscale IP on port 8484 (or 5173 in dev).</div>
+    </div>
+
+    <div class="actions">
+      <button class="ghost" id="cancel">Cancel</button>
+      <button class="primary" id="save">Save & open</button>
+    </div>
+
+    <script>
+      const api = window.grokbot;
+      let mode = null;
+      const cards = { local: document.getElementById("card-local"), remote: document.getElementById("card-remote") };
+      const localOpts = document.getElementById("local-opts");
+      const remoteOpts = document.getElementById("remote-opts");
+      const repoPath = document.getElementById("repoPath");
+      const remoteUrl = document.getElementById("remoteUrl");
+
+      function selectMode(m) {
+        mode = m;
+        cards.local.classList.toggle("sel", m === "local");
+        cards.remote.classList.toggle("sel", m === "remote");
+        localOpts.classList.toggle("hidden", m !== "local");
+        remoteOpts.classList.toggle("hidden", m !== "remote");
+      }
+      cards.local.onclick = () => selectMode("local");
+      cards.remote.onclick = () => selectMode("remote");
+      document.getElementById("browse").onclick = async (e) => {
+        e.stopPropagation();
+        const p = await api.pickFolder();
+        if (p) repoPath.value = p;
+      };
+      document.getElementById("cancel").onclick = () => window.close();
+      document.getElementById("save").onclick = async () => {
+        if (!mode) return;
+        await api.saveSettings({ mode, repoPath: repoPath.value.trim(), remoteUrl: remoteUrl.value.trim() });
+      };
+
+      (async () => {
+        const s = await api.getSettings();
+        repoPath.value = s.repoPath || "";
+        remoteUrl.value = s.remoteUrl || "";
+        if (s.mode) selectMode(s.mode);
+      })();
+    </script>
+  </body>
+</html>

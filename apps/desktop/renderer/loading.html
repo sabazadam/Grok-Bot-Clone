@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>GrokBot</title>
+    <style>
+      :root { font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
+      body { margin: 0; height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #ffffff; color: #1c1c1e; }
+      .glyph { width: 64px; height: 64px; border-radius: 16px; background: #0a84ff; display: flex; align-items: center; justify-content: center; font-size: 30px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); }
+      h1 { font-size: 20px; margin: 18px 0 4px; }
+      p { color: #8a8a8e; font-size: 13px; margin: 0; }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: #0a84ff; animation: pulse 1.2s infinite; margin-top: 16px; }
+      @keyframes pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+    </style>
+  </head>
+  <body>
+    <div class="glyph">💬</div>
+    <h1>GrokBot</h1>
+    <p>Starting your teammates…</p>
+    <div class="dot"></div>
+  </body>
+</html>

@@ -12,7 +12,10 @@
     "build": "npm run build -w packages/shared && npm run build -w apps/server && npm run build -w apps/web",
     "test": "npm run test -w apps/server",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "image:build": "bash images/agent-desktop/build.sh"
+    "image:build": "bash images/agent-desktop/build.sh",
+    "app:build": "npm run build && npm run build -w apps/desktop",
+    "app:dev": "npm run build -w packages/shared && npm run build -w apps/web && npm run dev -w apps/desktop",
+    "app:dist": "npm run build && npm run dist -w apps/desktop"
   },
   "engines": {
     "node": ">=20"

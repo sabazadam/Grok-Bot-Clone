@@ -1,6 +1,19 @@
-import "dotenv/config";
+import dotenv from "dotenv";
 import path from "node:path";
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+
+// Load .env robustly regardless of cwd: repo root (setup.sh writes it there) first,
+// then the current working directory. Works for `npm run dev`, and when the desktop
+// app spawns the server from a different directory.
+const here = path.dirname(fileURLToPath(import.meta.url));
+for (const p of [
+  process.env.GROKBOT_ENV,
+  path.resolve(here, "../../../.env"),
+  path.resolve(process.cwd(), ".env"),
+]) {
+  if (p && fs.existsSync(p)) dotenv.config({ path: p });
+}
 
 function env(name: string, fallback: string): string {
   const v = process.env[name];

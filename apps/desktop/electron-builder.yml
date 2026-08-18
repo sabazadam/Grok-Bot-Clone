@@ -1,0 +1,29 @@
+appId: com.grokbot.app
+productName: GrokBot
+copyright: GrokBot
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - renderer/**/*
+  - package.json
+# The local-mode server runs from your existing GrokBot install (system Node), so we
+# don't bundle the Node server/native modules into the app.
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  icon: build/icon.png
+  # Personal/unsigned build by default. To sign+notarize, set identity + notarize below
+  # and provide Apple credentials (see README).
+  identity: null
+dmg:
+  title: GrokBot ${version}
