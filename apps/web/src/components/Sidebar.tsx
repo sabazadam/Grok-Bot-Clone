@@ -153,12 +153,13 @@ export function Sidebar({
   }
 
   const sorted = [...state.conversations].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
-  const visible = sorted.filter((c) => {
+  // Agent-to-agent delegation now lands in the target agent's own chat, so there are no
+  // separate "agent ↔ agent" threads cluttering the sidebar (legacy ones are filtered out).
+  const chats = sorted.filter((c) => {
+    if (c.kind === "agent_dm") return false;
     if (c.kind === "direct" && c.agentIds[0] && hiddenIds.has(c.agentIds[0]) && !showHidden) return false;
     return true;
   });
-  const chats = visible.filter((c) => c.kind !== "agent_dm");
-  const agentDms = visible.filter((c) => c.kind === "agent_dm");
 
   return (
     <aside
@@ -228,15 +229,6 @@ export function Sidebar({
           </p>
         )}
         {chats.map(rowFor)}
-
-        {agentDms.length > 0 && (
-          <>
-            <div className="px-3 pt-4 pb-1 text-[11px] font-semibold tracking-wide uppercase" style={{ color: "var(--muted)" }}>
-              Agent ↔ agent
-            </div>
-            {agentDms.map(rowFor)}
-          </>
-        )}
 
         {hiddenCount > 0 && (
           <button

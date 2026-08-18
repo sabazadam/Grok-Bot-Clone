@@ -8,6 +8,7 @@
 import type { Conversation, Message } from "@grokbot/shared";
 import * as store from "../store.js";
 import { config } from "../config.js";
+import { broadcast } from "../bus.js";
 import { enqueue } from "./queue.js";
 import { runAgentTask } from "./runner.js";
 
@@ -72,7 +73,45 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
   }
 }
 
-/** Dispatch an agent-to-agent message (from tool call) to the recipient. */
+/**
+ * Deliver an agent-to-agent message into the RECIPIENT'S OWN chat (their direct
+ * conversation), then wake them to act on it there. This keeps delegation visible
+ * in the target agent's chat instead of spawning separate "agent ↔ agent" threads
+ * that would clutter the sidebar. Budget-capped for loop prevention.
+ */
+export function deliverAgentMessage(opts: {
+  fromAgentId: string;
+  toAgentId: string;
+  text: string;
+  rootMessageId: string;
+}): { delivered: boolean; conversationId?: string } {
+  if (!consumeTurn(opts.rootMessageId)) return { delivered: false };
+  const conv = store.ensureDirectConversation(opts.toAgentId);
+  const msg = store.addMessage({
+    conversationId: conv.id,
+    sender: { kind: "agent", agentId: opts.fromAgentId },
+    kind: "text",
+    text: opts.text,
+  });
+  broadcast({ type: "message", message: msg });
+  const updated = store.getConversation(conv.id);
+  if (updated) broadcast({ type: "conversation_updated", conversation: updated });
+  enqueue(opts.toAgentId, () =>
+    runAgentTask({
+      agentId: opts.toAgentId,
+      conversationId: conv.id,
+      prompt: opts.text,
+      rootMessageId: opts.rootMessageId,
+      triggeredBy: { kind: "agent", agentId: opts.fromAgentId },
+    }),
+  );
+  return { delivered: true, conversationId: conv.id };
+}
+
+/**
+ * Wake an agent to act within an EXISTING conversation (used for group-chat
+ * handoffs, where the message is already posted in the group). Enqueue-only.
+ */
 export function dispatchAgentMessage(opts: {
   fromAgentId: string;
   toAgentId: string;

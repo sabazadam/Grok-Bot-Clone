@@ -224,15 +224,12 @@ export function directConversationForAgent(agentId: string): Conversation | unde
   return listConversations().find((c) => c.kind === "direct" && c.agentIds.length === 1 && c.agentIds[0] === agentId);
 }
 
-/** Agent<->agent DM channel; created lazily on first inter-agent message. */
-export function agentDmConversation(a: string, b: string): Conversation {
-  const found = listConversations().find(
-    (c) => c.kind === "agent_dm" && c.agentIds.length === 2 && c.agentIds.includes(a) && c.agentIds.includes(b),
-  );
-  if (found) return found;
-  const an = getAgent(a)?.name ?? a;
-  const bn = getAgent(b)?.name ?? b;
-  return createConversation("agent_dm", `${an} ↔ ${bn}`, [a, b]);
+/** The agent's own chat, created if missing. Agent-to-agent delegation lands here. */
+export function ensureDirectConversation(agentId: string): Conversation {
+  const existing = directConversationForAgent(agentId);
+  if (existing) return existing;
+  const name = getAgent(agentId)?.name ?? "Agent";
+  return createConversation("direct", name, [agentId]);
 }
 
 export function renameConversation(id: string, title: string): void {

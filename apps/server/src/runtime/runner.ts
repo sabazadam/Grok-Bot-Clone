@@ -222,17 +222,10 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     postAgentText(agent, conversation.id, finalText);
   }
 
-  // agent DM: the reply wakes the original sender so the exchange can continue
-  // (dispatchAgentMessage enforces the per-request turn budget; "ACK" ends the thread)
-  if (!failed && conversation.kind === "agent_dm" && opts.triggeredBy.kind === "agent" && finalText && !isAck) {
-    dispatchAgentMessage({
-      fromAgentId: agent.id,
-      toAgentId: opts.triggeredBy.agentId,
-      conversationId: conversation.id,
-      text: finalText,
-      rootMessageId: opts.rootMessageId,
-    });
-  }
+  // Note: a delegated agent does NOT auto-forward its reply back to the requester
+  // (that caused noisy ping-pong). Its result stays visible in its own chat; if it
+  // wants to report back, it explicitly uses send_message_to_agent, which lands in
+  // the requester's chat. This keeps agent-to-agent traffic intentional.
 
   // group-chat handoffs: @mentions in the final reply wake those agents
   if (!failed && conversation.kind === "group" && finalText && !isAck) {

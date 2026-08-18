@@ -6,8 +6,7 @@ import type { ToolInvocation, ToolOutcome } from "../models/types.js";
 import { computerManager } from "../computer/manager.js";
 import { config } from "../config.js";
 import * as store from "../store.js";
-import { broadcast } from "../bus.js";
-import { dispatchAgentMessage } from "./orchestrator.js";
+import { deliverAgentMessage } from "./orchestrator.js";
 
 export interface ExecContext {
   agent: Agent;
@@ -113,19 +112,10 @@ export async function executeInvocation(
           },
         };
       }
-      const dm = store.agentDmConversation(agent.id, recipient.id);
-      const msg = store.addMessage({
-        conversationId: dm.id,
-        sender: { kind: "agent", agentId: agent.id },
-        kind: "text",
-        text: inv.text,
-      });
-      broadcast({ type: "message", message: msg });
-      broadcast({ type: "conversation_updated", conversation: store.getConversation(dm.id)! });
-      const delivered = dispatchAgentMessage({
+      // Deliver into the recipient's OWN chat; they act & reply there.
+      const { delivered } = deliverAgentMessage({
         fromAgentId: agent.id,
         toAgentId: recipient.id,
-        conversationId: dm.id,
         text: inv.text,
         rootMessageId: ctx.rootMessageId,
       });
@@ -134,7 +124,7 @@ export async function executeInvocation(
           id: inv.id,
           tool: inv.tool,
           output: delivered
-            ? `delivered to ${recipient.name}; they will act on their own computer and may reply later`
+            ? `delivered to ${recipient.name} in their chat; they will act on their own computer and report back to you`
             : `NOT delivered — the agent-to-agent turn budget for this request is exhausted`,
           isError: !delivered,
         },
