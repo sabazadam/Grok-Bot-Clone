@@ -24,6 +24,18 @@ export const config = {
   computerMemory: env("COMPUTER_MEMORY", "2g"),
   dockerSocket: env("DOCKER_SOCKET", "/var/run/docker.sock"),
 
+  /**
+   * Host interface the per-agent noVNC (live desktop) ports bind to.
+   *  - "127.0.0.1" (default): single-device use — only reachable on this machine.
+   *  - a Tailscale IP / "0.0.0.0": server/commander use — the desktop view is reachable
+   *    from another device (e.g. your MacBook over Tailscale).
+   * The API and the in-container actuator always stay on loopback; the web UI reaches
+   * them via the Vite proxy, so only these noVNC ports are ever exposed.
+   */
+  computerBindHost: env("COMPUTER_BIND_HOST", "127.0.0.1"),
+  /** Human-readable access mode, recorded by setup for diagnostics. */
+  accessMode: env("ACCESS_MODE", "local"),
+
   /** Stealth browsing defaults (used by agents with stealthBrowsing on). */
   browserUserAgent: env(
     "BROWSER_USER_AGENT",

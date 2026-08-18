@@ -45,6 +45,67 @@ else
   ok ".env exists"
 fi
 
+# set_env KEY VALUE — update KEY in .env (or append if missing)
+set_env() {
+  local key="$1" val="$2"
+  if grep -qE "^${key}=" .env; then
+    # portable in-place edit (macOS + Linux)
+    local tmp
+    tmp="$(mktemp)"
+    grep -vE "^${key}=" .env > "$tmp"
+    printf '%s=%s\n' "$key" "$val" >> "$tmp"
+    mv "$tmp" .env
+  else
+    printf '%s=%s\n' "$key" "$val" >> .env
+  fi
+}
+
+# 5b. Access mode — how will you reach GrokBot?
+bold "How will you use GrokBot?"
+echo "  1) This device only — run and use it all on this machine (default)."
+echo "  2) Server + commander — this machine is the server; drive it from another"
+echo "     device (e.g. your MacBook) over your private Tailscale network."
+ACCESS_CHOICE="1"
+if [ -t 0 ]; then
+  read -r -p "Choose [1/2] (default 1): " ACCESS_CHOICE || true
+fi
+ACCESS_CHOICE="${ACCESS_CHOICE:-1}"
+
+if [ "$ACCESS_CHOICE" = "2" ]; then
+  # Detect a Tailscale IPv4 (100.x.y.z) so we bind only to the tailnet, not the whole LAN.
+  TS_IP=""
+  if command -v tailscale >/dev/null 2>&1; then
+    TS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
+  fi
+  if [ -z "$TS_IP" ]; then
+    for cand in /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
+      [ -x "$cand" ] && TS_IP="$("$cand" ip -4 2>/dev/null | head -n1 || true)" && break
+    done
+  fi
+  if [ -n "$TS_IP" ]; then
+    set_env ACCESS_MODE "server"
+    set_env WEB_HOST "$TS_IP"
+    set_env COMPUTER_BIND_HOST "$TS_IP"
+    ok "Server mode: bound to your Tailscale IP ${TS_IP} (reachable only on your tailnet)."
+    echo "     From your MacBook (connected to the same tailnet), open: http://${TS_IP}:5173"
+    ACCESS_URL="http://${TS_IP}:5173"
+  else
+    set_env ACCESS_MODE "server"
+    set_env WEB_HOST "0.0.0.0"
+    set_env COMPUTER_BIND_HOST "0.0.0.0"
+    warn "Tailscale IP not found. Bound to 0.0.0.0 (ALL interfaces)."
+    warn "Install/'up' Tailscale and re-run to restrict access to your tailnet, or ensure a firewall protects this machine."
+    echo "     From your other device, open: http://<this-machine-tailscale-or-LAN-ip>:5173"
+    ACCESS_URL="http://<this-machine-ip>:5173"
+  fi
+else
+  set_env ACCESS_MODE "local"
+  set_env WEB_HOST "127.0.0.1"
+  set_env COMPUTER_BIND_HOST "127.0.0.1"
+  ok "Single-device mode: everything stays on this machine (localhost only)."
+  ACCESS_URL="http://localhost:5173"
+fi
+
 # 6. Resources
 if [ "$(uname)" = "Darwin" ]; then
   MEM_GB=$(( $(sysctl -n hw.memsize) / 1073741824 ))
@@ -56,4 +117,5 @@ SUGGESTED=$(( MEM_GB / 4 ))
 ok "System RAM: ${MEM_GB}GB — each agent computer uses ~1-2GB (MAX_RUNNING_COMPUTERS default 4, suggested max here: ${SUGGESTED})"
 
 bold "Done! Start GrokBot with:  npm run dev"
-echo "Then open http://localhost:5173"
+echo "Then open ${ACCESS_URL:-http://localhost:5173}"
+echo "(Re-run this script anytime to change how you access GrokBot.)"

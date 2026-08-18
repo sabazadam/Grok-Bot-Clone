@@ -34,7 +34,10 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
     if (!computer?.novncPort || computer.state !== "running") return null;
     const params = new URLSearchParams({ autoconnect: "1", resize: "scale", reconnect: "1" });
     if (!takeover) params.set("view_only", "1");
-    return `http://127.0.0.1:${computer.novncPort}/vnc.html?${params.toString()}`;
+    // Use the host the app was loaded from so this works both locally (localhost) and
+    // remotely (e.g. the Mac mini's Tailscale IP when driving from a MacBook).
+    const host = window.location.hostname || "127.0.0.1";
+    return `http://${host}:${computer.novncPort}/vnc.html?${params.toString()}`;
   }, [computer?.novncPort, computer?.state, takeover]);
 
   if (!active) return null;

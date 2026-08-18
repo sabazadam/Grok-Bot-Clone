@@ -48,6 +48,21 @@ if (!fs.existsSync(envPath)) {
   } else {
     ok(`Provider keys configured: ${keys.join(", ")}`);
   }
+
+  // Access mode
+  const val = (k, d) => (env.match(new RegExp(`^${k}=(.*)$`, "m"))?.[1] ?? d).trim();
+  const mode = val("ACCESS_MODE", "local");
+  const webHost = val("WEB_HOST", "127.0.0.1");
+  const webPort = val("WEB_PORT", "5173");
+  if (mode === "server") {
+    if (webHost === "0.0.0.0" || webHost === "") {
+      warn(`Access: server mode bound to ALL interfaces (0.0.0.0) — protect this machine with Tailscale/a firewall. Open http://<this-machine-ip>:${webPort} from your other device`);
+    } else {
+      ok(`Access: server mode — reach it from another device at http://${webHost}:${webPort} (e.g. over Tailscale)`);
+    }
+  } else {
+    ok(`Access: single-device — open http://localhost:${webPort} on this machine`);
+  }
 }
 
 // RAM

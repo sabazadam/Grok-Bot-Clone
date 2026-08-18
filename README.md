@@ -45,9 +45,28 @@ bash scripts/setup.sh     # checks Docker, installs deps, builds the agent OS im
 npm run dev
 ```
 
-3. Open **http://localhost:5173**, hit **+ → New agent**, give it a name and a job, and message it.
+3. Open the URL setup prints, hit **+ → New agent**, give it a name and a job, and message it.
 
-Health check anytime: `node scripts/doctor.mjs`
+`scripts/setup.sh` asks **how you'll use GrokBot** (see below). Health check anytime: `node scripts/doctor.mjs`
+
+## Running it: single device vs. server + commander
+
+Setup asks which fits you (re-run it anytime to switch):
+
+1. **This device only** — the server and UI run on one machine; everything binds to `localhost`.
+   Open `http://localhost:5173`.
+2. **Server + commander (Tailscale)** — the Mac mini is the always-on **server** (runs the agents
+   and their computers); you drive it from another device like a **MacBook** ("commander").
+   Setup detects the Mac mini's **Tailscale IP** and binds the web UI and the live-desktop (noVNC)
+   ports to it, so GrokBot is reachable only on your private tailnet. On the MacBook (joined to the
+   same tailnet) open `http://<mac-mini-tailscale-ip>:5173`.
+
+Only the web UI and the per-agent noVNC ports are ever exposed — the API and the in-container
+actuator always stay on loopback and are reached through the Vite proxy on the server. If Tailscale
+isn't detected, server mode falls back to binding all interfaces (`0.0.0.0`) with a warning; prefer
+Tailscale (or a firewall) so the machine isn't open to your whole LAN/the internet.
+
+Relevant `.env` keys (written by setup): `ACCESS_MODE`, `WEB_HOST`, `WEB_PORT`, `COMPUTER_BIND_HOST`.
 
 ### Try it without an API key
 
@@ -125,5 +144,10 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 
 Agents can browse the web and run commands inside their containers. Treat each agent's computer
 as semi-trusted: don't paste secrets into chats, use Take over for passwords/2FA (they go straight
-to the agent's screen, never through a model), and keep the approval rules on. The web UI binds to
-localhost; do not port-forward it without adding authentication.
+to the agent's screen, never through a model), and keep the approval rules on.
+
+In **single-device** mode everything binds to localhost. In **server + commander** mode the web UI
+and noVNC ports become reachable from other devices — do this only over a private network like
+**Tailscale** (which authenticates devices and encrypts traffic). GrokBot itself has no built-in
+login, so never bind it to a public interface or port-forward it to the internet without putting
+authentication (e.g. a reverse proxy, or Tailscale ACLs) in front of it.

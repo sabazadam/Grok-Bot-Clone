@@ -134,7 +134,10 @@ export class ComputerManager {
           ShmSize: 512 * 1024 ** 2,
           Binds: [`${this.volumeName(agentId)}:/home/agent`],
           PortBindings: {
-            "6080/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
+            // noVNC (live desktop) — reachable per the access mode (loopback locally, or
+            // a Tailscale IP / 0.0.0.0 for server/commander use).
+            "6080/tcp": [{ HostIp: config.computerBindHost, HostPort: "" }],
+            // actuator — only the server (on this machine) talks to it, so keep it loopback.
             "8090/tcp": [{ HostIp: "127.0.0.1", HostPort: "" }],
           },
           SecurityOpt: ["no-new-privileges"],
