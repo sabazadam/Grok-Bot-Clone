@@ -30,6 +30,15 @@ if [ "$STEALTH" = "1" ]; then
   [ -n "$TZ" ] && export TZ
   [ -n "$LOCALE" ] && FLAGS+=(--lang="$LOCALE")
   [ -n "$USER_AGENT" ] && FLAGS+=(--user-agent="$USER_AGENT")
+  # Enable software WebGL so a context EXISTS (no GPU in the container); the stealth
+  # extension then masks the SwiftShader renderer as a real GPU. "No WebGL at all"
+  # is itself a bot/VM signal, so this is important.
+  FLAGS+=(
+    --use-gl=angle
+    --use-angle=swiftshader
+    --enable-unsafe-swiftshader
+    --ignore-gpu-blocklist
+  )
   if [ -d /opt/grokbot-stealth ]; then
     FLAGS+=(--disable-extensions-except=/opt/grokbot-stealth --load-extension=/opt/grokbot-stealth)
   fi
