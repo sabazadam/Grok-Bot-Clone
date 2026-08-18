@@ -50,6 +50,9 @@ export const config = {
   maxAgentTurns: Number(env("MAX_AGENT_TURNS", "8")),
 
   agentDesktopImage: env("AGENT_DESKTOP_IMAGE", "grokbot/agent-desktop:latest"),
+
+  /** Built web UI directory; when present it's served at "/" so the whole app runs on one port. */
+  webDist: env("WEB_DIST", path.resolve(process.cwd(), "../web/dist")),
 };
 
 export function ensureDataDirs(): void {

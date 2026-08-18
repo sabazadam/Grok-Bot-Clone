@@ -1,6 +1,7 @@
 /** REST + WebSocket API. */
 import type { FastifyInstance } from "fastify";
 import path from "node:path";
+import fs from "node:fs";
 import { z } from "zod";
 import fastifyStatic from "@fastify/static";
 import { PROVIDER_DEFAULT_MODELS, PROVIDER_LABELS, type Provider } from "@grokbot/shared";
@@ -32,6 +33,26 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     root: path.join(config.dataDir, "screenshots"),
     prefix: "/screenshots/",
   });
+
+  // Serve the built web UI (single-port mode, used by the desktop app and plain browser
+  // access). Registered only when a production build exists; dev uses the Vite server.
+  const hasBuiltUi = fs.existsSync(path.join(config.webDist, "index.html"));
+  if (hasBuiltUi) {
+    await app.register(fastifyStatic, {
+      root: config.webDist,
+      prefix: "/",
+      decorateReply: false, // a fastify-static instance is already registered above
+    });
+    // SPA fallback: non-asset, non-API GET routes return index.html.
+    app.setNotFoundHandler((req, reply) => {
+      if (req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws") && !req.url.startsWith("/screenshots")) {
+        // Serve from the web-dist root explicitly: reply.sendFile is decorated by the
+        // first static registration (screenshots), so pass the correct root here.
+        return reply.type("text/html").sendFile("index.html", config.webDist);
+      }
+      return reply.code(404).send({ error: "not found" });
+    });
+  }
 
   app.get("/ws", { websocket: true }, (socket) => {
     addClient(socket);
