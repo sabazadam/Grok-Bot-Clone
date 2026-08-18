@@ -1,0 +1,15 @@
+{
+  "name": "Forge",
+  "user": "ubuntu",
+  "install": "pnpm --dir apps/web install --frozen-lockfile",
+  "terminals": [
+    {
+      "name": "dev",
+      "command": "pnpm dev",
+      "description": "Next.js dev server for the Forge web app on http://localhost:3000"
+    }
+  ],
+  "ports": [
+    { "name": "web", "port": 3000 }
+  ]
+}
