@@ -12,6 +12,7 @@ import { addClient, broadcast } from "./bus.js";
 import { dispatchUserMessage } from "./runtime/orchestrator.js";
 import { resolvePendingApproval } from "./runtime/approvals.js";
 import { cancelTask } from "./runtime/cancel.js";
+import { setTakeover } from "./runtime/takeover.js";
 
 const providerEnum = z.enum(["anthropic", "openai", "google", "generic"]);
 
@@ -131,6 +132,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     await computerManager.restart(id);
     await service.provisionComputer(id);
     return computerManager.status(id);
+  });
+
+  app.post("/api/agents/:id/takeover", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const body = z.object({ active: z.boolean() }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    setTakeover(id, body.data.active);
+    return { ok: true, active: body.data.active };
   });
 
   // ── memories ──────────────────────────────────────────────────────────

@@ -16,6 +16,7 @@ import { buildSystemPrompt, recentTranscript } from "./prompt.js";
 import { evaluateInvocation, describeExactAction } from "./safety.js";
 import { requestApproval } from "./approvals.js";
 import { registerTask, unregisterTask } from "./cancel.js";
+import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
 
@@ -112,6 +113,8 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
 
       const outcomes: ToolOutcome[] = [];
       for (const inv of decision.invocations) {
+        // pause while the user has manual control of this agent's screen
+        await waitWhileTakenOver(agent.id, signal);
         if (signal.aborted) {
           finalText = "Task cancelled.";
           store.updateTask(task.id, { status: "cancelled", finishedAt: Date.now() });
@@ -248,7 +251,16 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     }
   }
 
-  const t = store.getTask(task.id);
-  if (t) broadcast({ type: "task_updated", task: t });
+  // learn from the work: keep a short auto-summary of substantial completed tasks
+  const finishedTask = store.getTask(task.id);
+  if (!failed && finishedTask?.status === "done" && finishedTask.stepCount >= 3 && finalText && !isAck) {
+    store.addMemory(
+      agent.id,
+      "summary",
+      `Task "${opts.prompt.slice(0, 120)}" → ${finalText.slice(0, 200)}`,
+    );
+  }
+
+  if (finishedTask) broadcast({ type: "task_updated", task: finishedTask });
   service.setStatus(agent.id, "idle");
 }

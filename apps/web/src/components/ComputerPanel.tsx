@@ -19,6 +19,14 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
     if (!agents.some((a) => a.id === activeId)) setActiveId(agents[0]?.id ?? null);
   }, [agents, activeId]);
 
+  // release manual control when switching agents or closing the panel
+  useEffect(() => {
+    setTakeover(false);
+    return () => {
+      if (activeId) void api.setTakeover(activeId, false).catch(() => undefined);
+    };
+  }, [activeId]);
+
   const active = state.agents.find((a) => a.id === activeId);
   const computer = active?.computer;
   const live = active ? state.liveSteps[active.id] : undefined;
@@ -74,7 +82,11 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
           {active.status === "working" && live ? live.caption : STATUS_LABELS[active.status]}
         </span>
         <button
-          onClick={() => setTakeover((v) => !v)}
+          onClick={() => {
+            const next = !takeover;
+            setTakeover(next);
+            void api.setTakeover(active.id, next).catch(() => setTakeover(!next));
+          }}
           disabled={!vncUrl}
           className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold ${
             takeover ? "bg-orange-600 text-white" : "border border-neutral-700 text-neutral-300 hover:bg-neutral-800"
