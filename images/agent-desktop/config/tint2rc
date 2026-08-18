@@ -1,0 +1,47 @@
+# GrokBot agent desktop taskbar
+panel_items = LTC
+panel_position = bottom center horizontal
+panel_size = 100% 34
+panel_background_id = 1
+wm_menu = 1
+
+# Backgrounds
+rounded = 0
+border_width = 0
+background_color = #1c2128 100
+background_id = 1
+
+rounded = 4
+border_width = 1
+border_color = #3d444d 100
+background_color = #2d333b 100
+background_id = 2
+
+# Launchers: browser, terminal, files, editor
+launcher_padding = 8 4 10
+launcher_background_id = 1
+launcher_icon_size = 24
+launcher_icon_theme_override = 0
+launcher_item_app = /usr/share/applications/grokbot/browser.desktop
+launcher_item_app = /usr/share/applications/grokbot/terminal.desktop
+launcher_item_app = /usr/share/applications/grokbot/files.desktop
+launcher_item_app = /usr/share/applications/grokbot/editor.desktop
+
+# Taskbar
+taskbar_mode = single_desktop
+taskbar_padding = 6 3 6
+task_text = 1
+task_icon = 1
+task_maximum_size = 200 30
+task_background_id = 1
+task_active_background_id = 2
+task_font = DejaVu Sans 9
+task_font_color = #d1d7e0 100
+task_active_font_color = #ffffff 100
+
+# Clock
+time1_format = %H:%M
+clock_font = DejaVu Sans 9
+clock_font_color = #d1d7e0 100
+clock_padding = 8 4
+clock_background_id = 1

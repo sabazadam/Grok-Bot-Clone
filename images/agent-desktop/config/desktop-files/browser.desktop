@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Web Browser
+Exec=/usr/local/bin/browser
+Icon=chromium
+Terminal=false
