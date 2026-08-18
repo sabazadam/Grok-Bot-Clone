@@ -1,0 +1,24 @@
+{
+  "name": "grokbot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted AI agent teammates with their own operating systems. Multi-model, runs locally on macOS (Apple Silicon) via Docker.",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm run dev -w apps/server\" \"npm run dev -w apps/web\"",
+    "build": "npm run build -w packages/shared && npm run build -w apps/server && npm run build -w apps/web",
+    "test": "npm run test -w apps/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "image:build": "bash images/agent-desktop/build.sh"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "typescript": "^7.0.2"
+  }
+}
