@@ -24,6 +24,7 @@ const agentBody = z.object({
   provider: providerEnum,
   model: z.string().min(1).max(120),
   collaborationEnabled: z.boolean().default(true),
+  stealthBrowsing: z.boolean().default(true),
 });
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -93,6 +94,10 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       if (conv) broadcast({ type: "conversation_updated", conversation: conv });
     }
     const full = await service.agentWithComputer(agent);
+    // apply browser/stealth setting changes live (no container recreate needed)
+    if (full.computer?.state === "running") {
+      void service.syncBrowserConfig(id);
+    }
     broadcast({ type: "agent_updated", agent: full });
     return full;
   });
@@ -103,6 +108,22 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
     await service.deleteAgent(id, deleteData === "1");
     return { ok: true };
+  });
+
+  app.post("/api/agents/:id/duplicate", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const copy = await service.duplicateAgent(id);
+    return service.agentWithComputer(copy!);
+  });
+
+  app.post("/api/agents/:id/hide", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const body = z.object({ hidden: z.boolean() }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const agent = await service.setHidden(id, body.data.hidden);
+    return agent;
   });
 
   // ── agent computer lifecycle ──────────────────────────────────────────

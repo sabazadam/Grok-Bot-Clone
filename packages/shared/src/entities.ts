@@ -30,6 +30,10 @@ export interface Agent {
   model: string;
   /** May this agent message other agents? */
   collaborationEnabled: boolean;
+  /** Use the anti-detection / fingerprint-hardened browser for this agent's computer. */
+  stealthBrowsing: boolean;
+  /** Hidden from the sidebar (archived) — conversation and computer are kept. */
+  hidden: boolean;
   status: AgentStatus;
   /** Host ports of this agent's computer, when provisioned */
   computer?: ComputerInfo;

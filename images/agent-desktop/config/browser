@@ -1,0 +1,38 @@
+#!/bin/bash
+# GrokBot browser launcher.
+#
+# Sources ~/.config/grokbot/browser.env (written by the server) to decide whether
+# to run in stealth / anti-fingerprint mode. When STEALTH=1 (default) it applies a
+# realistic user-agent, locale, timezone, and loads the bundled fingerprint-hardening
+# extension. Set STEALTH=0 (or use `browser-plain`) for a vanilla launch.
+set -o allexport
+STEALTH=1
+USER_AGENT=""
+TZ=""
+LOCALE="en-US"
+[ -f "$HOME/.config/grokbot/browser.env" ] && . "$HOME/.config/grokbot/browser.env"
+set +o allexport
+
+# Base flags. --no-sandbox / --disable-dev-shm-usage are required inside containers
+# and are NOT observable from page JavaScript.
+FLAGS=(
+  --no-sandbox
+  --disable-dev-shm-usage
+  --no-first-run
+  --no-default-browser-check
+  --disable-features=TranslateUI,AutomationControlled
+  --disable-blink-features=AutomationControlled
+  --password-store=basic
+  --user-data-dir="$HOME/.config/chromium"
+)
+
+if [ "$STEALTH" = "1" ]; then
+  [ -n "$TZ" ] && export TZ
+  [ -n "$LOCALE" ] && FLAGS+=(--lang="$LOCALE")
+  [ -n "$USER_AGENT" ] && FLAGS+=(--user-agent="$USER_AGENT")
+  if [ -d /opt/grokbot-stealth ]; then
+    FLAGS+=(--disable-extensions-except=/opt/grokbot-stealth --load-extension=/opt/grokbot-stealth)
+  fi
+fi
+
+exec /usr/bin/chromium "${FLAGS[@]}" "$@"

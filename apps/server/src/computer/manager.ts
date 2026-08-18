@@ -240,6 +240,30 @@ export class ComputerManager {
     return (await res.json()) as ActionResponse;
   }
 
+  /**
+   * Write the browser configuration file the in-container wrapper sources, so an
+   * agent's stealth toggle / UA / timezone / locale take effect without recreating
+   * the container.
+   */
+  async syncBrowserConfig(
+    agentId: string,
+    opts: { stealth: boolean; userAgent: string; timezone: string; locale: string },
+  ): Promise<void> {
+    const esc = (s: string) => s.replace(/'/g, "'\\''");
+    const content = [
+      `STEALTH=${opts.stealth ? "1" : "0"}`,
+      `USER_AGENT='${esc(opts.userAgent)}'`,
+      `TZ='${esc(opts.timezone)}'`,
+      `LOCALE='${esc(opts.locale)}'`,
+    ].join("\n");
+    const cmd = `mkdir -p ~/.config/grokbot && cat > ~/.config/grokbot/browser.env <<'GBEOF'\n${content}\nGBEOF`;
+    try {
+      await this.exec(agentId, cmd, 15);
+    } catch {
+      /* best-effort; wrapper falls back to stealth-on defaults */
+    }
+  }
+
   async exec(agentId: string, cmd: string, timeoutSec = 60): Promise<ExecResult> {
     const port = await this.actuatorPort(agentId);
     this.touch(agentId);

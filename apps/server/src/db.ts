@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS agents (
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
   collaboration_enabled INTEGER NOT NULL DEFAULT 1,
+  stealth_browsing INTEGER NOT NULL DEFAULT 1,
+  hidden INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'off',
   created_at INTEGER NOT NULL
 );
@@ -87,13 +89,26 @@ export function getDb(): Database.Database {
     db.pragma("journal_mode = WAL");
     db.pragma("foreign_keys = ON");
     db.exec(DDL);
+    migrate(db);
   }
   return db;
+}
+
+/** Additive column migrations for databases created before newer features. */
+function migrate(d: Database.Database): void {
+  const cols = new Set((d.prepare(`PRAGMA table_info(agents)`).all() as { name: string }[]).map((c) => c.name));
+  if (!cols.has("stealth_browsing")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN stealth_browsing INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!cols.has("hidden")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`);
+  }
 }
 
 /** For tests: use an isolated in-memory database. */
 export function useTestDb(): Database.Database {
   db = new Database(":memory:");
   db.exec(DDL);
+  migrate(db);
   return db;
 }

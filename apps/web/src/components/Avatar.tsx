@@ -1,12 +1,12 @@
 import type { Agent, AgentStatus } from "@grokbot/shared";
 
 export const STATUS_COLORS: Record<AgentStatus, string> = {
-  off: "bg-neutral-600",
-  starting: "bg-amber-400",
-  idle: "bg-emerald-500",
-  working: "bg-sky-400",
-  waiting_approval: "bg-orange-500",
-  error: "bg-red-500",
+  off: "var(--muted)",
+  starting: "var(--warn)",
+  idle: "var(--ok)",
+  working: "var(--accent)",
+  waiting_approval: "var(--warn)",
+  error: "var(--danger)",
 };
 
 export const STATUS_LABELS: Record<AgentStatus, string> = {
@@ -33,21 +33,30 @@ export function Avatar({
     .slice(0, 2)
     .join("")
     .toUpperCase();
+  const working = agent.status === "working" || agent.status === "starting";
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <div
-        className="flex h-full w-full items-center justify-center rounded-full font-semibold text-white"
+        className="flex h-full w-full items-center justify-center rounded-full font-semibold text-white shadow-sm"
         style={{ backgroundColor: agent.avatarColor, fontSize: size * 0.38 }}
       >
         {initials}
       </div>
       {showStatus && (
         <span
-          className={`absolute -right-0.5 -bottom-0.5 block rounded-full border-2 border-neutral-900 ${STATUS_COLORS[agent.status]}`}
-          style={{ width: size * 0.32, height: size * 0.32 }}
+          className="absolute -right-0.5 -bottom-0.5 block rounded-full"
+          style={{
+            width: size * 0.32,
+            height: size * 0.32,
+            backgroundColor: STATUS_COLORS[agent.status],
+            border: "2px solid var(--sidebar)",
+            boxShadow: working ? `0 0 0 0 ${"var(--accent)"}` : undefined,
+            animation: working ? "gb-pulse 1.4s ease-out infinite" : undefined,
+          }}
           title={STATUS_LABELS[agent.status]}
         />
       )}
+      <style>{`@keyframes gb-pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent)}70%{box-shadow:0 0 0 5px transparent}100%{box-shadow:0 0 0 0 transparent}}`}</style>
     </div>
   );
 }
@@ -59,7 +68,7 @@ export function GroupAvatar({ agents, size = 40 }: { agents: Pick<Agent, "name" 
       {shown.map((a, i) => (
         <div
           key={a.name + i}
-          className="absolute flex items-center justify-center rounded-full border-2 border-neutral-900 font-semibold text-white"
+          className="absolute flex items-center justify-center rounded-full font-semibold text-white"
           style={{
             backgroundColor: a.avatarColor,
             width: size * 0.68,
@@ -68,6 +77,7 @@ export function GroupAvatar({ agents, size = 40 }: { agents: Pick<Agent, "name" 
             left: i === 0 ? 0 : size * 0.32,
             top: i === 0 ? 0 : size * 0.32,
             zIndex: 2 - i,
+            border: "2px solid var(--sidebar)",
           }}
         >
           {a.name[0]?.toUpperCase()}

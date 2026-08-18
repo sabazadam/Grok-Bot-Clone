@@ -24,6 +24,14 @@ export const config = {
   computerMemory: env("COMPUTER_MEMORY", "2g"),
   dockerSocket: env("DOCKER_SOCKET", "/var/run/docker.sock"),
 
+  /** Stealth browsing defaults (used by agents with stealthBrowsing on). */
+  browserUserAgent: env(
+    "BROWSER_USER_AGENT",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+  ),
+  browserTimezone: env("BROWSER_TIMEZONE", "America/New_York"),
+  browserLocale: env("BROWSER_LOCALE", "en-US"),
+
   /** Max computer-use loop steps per task */
   maxTaskSteps: Number(env("MAX_TASK_STEPS", "60")),
   /** Max agent-to-agent turns triggered by one user message (loop prevention) */

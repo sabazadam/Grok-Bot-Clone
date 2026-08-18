@@ -87,6 +87,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
 
   try {
     await computerManager.ensureRunning(agent.id);
+    await service.syncBrowserConfig(agent.id);
     const firstShot = await computerManager.screenshot(agent.id);
 
     const adapter = createAdapter(agent, buildSystemPrompt(agent));

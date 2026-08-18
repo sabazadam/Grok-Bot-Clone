@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # input + screenshot + window tooling for the actuator
     xdotool scrot x11-utils x11-xserver-utils procps \
     # apps the agent uses
-    chromium fonts-dejavu fonts-liberation \
+    chromium fonts-dejavu fonts-liberation fonts-liberation2 fonts-noto-core fonts-noto-color-emoji tzdata \
     # file manager + editor niceties
     pcmanfm mousepad \
     # actuator runtime + process supervisor
@@ -29,9 +29,11 @@ RUN useradd -m -s /bin/bash -u 1001 agent && \
     mkdir -p /home/agent/workspace /home/agent/.config/openbox /home/agent/.config/tint2 && \
     chown -R agent:agent /home/agent
 
-# Browser wrapper: sandbox flags required inside containers
-RUN printf '#!/bin/sh\nexec /usr/bin/chromium --no-sandbox --disable-dev-shm-usage --no-first-run --no-default-browser-check --disable-features=TranslateUI "$@"\n' \
-    > /usr/local/bin/browser && chmod +x /usr/local/bin/browser
+# Stealth browser assets + wrappers (see config/browser scripts and stealth-ext/)
+COPY stealth-ext/ /opt/grokbot-stealth/
+COPY config/browser /usr/local/bin/browser
+COPY config/browser-plain /usr/local/bin/browser-plain
+RUN chmod +x /usr/local/bin/browser /usr/local/bin/browser-plain
 
 COPY --chown=agent:agent config/openbox-rc.xml /home/agent/.config/openbox/rc.xml
 COPY --chown=agent:agent config/openbox-menu.xml /home/agent/.config/openbox/menu.xml

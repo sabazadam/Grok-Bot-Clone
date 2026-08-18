@@ -1,0 +1,10 @@
+#!/bin/sh
+# Vanilla Chromium launch (no stealth), for debugging / comparison.
+exec /usr/bin/chromium \
+  --no-sandbox \
+  --disable-dev-shm-usage \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-features=TranslateUI \
+  --user-data-dir="$HOME/.config/chromium" \
+  "$@"

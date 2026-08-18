@@ -30,6 +30,8 @@ function rowToAgent(r: any): Agent {
     provider: r.provider as Provider,
     model: r.model,
     collaborationEnabled: !!r.collaboration_enabled,
+    stealthBrowsing: !!r.stealth_browsing,
+    hidden: !!r.hidden,
     status: r.status as AgentStatus,
     createdAt: r.created_at,
   };
@@ -107,16 +109,28 @@ export interface NewAgent {
   provider: Provider;
   model: string;
   collaborationEnabled: boolean;
+  stealthBrowsing: boolean;
 }
 
 export function createAgent(a: NewAgent): Agent {
   const id = nanoid(10);
   getDb()
     .prepare(
-      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'off', ?)`,
+      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'off', ?)`,
     )
-    .run(id, a.name, a.roleTitle, a.instructions, a.avatarColor, a.provider, a.model, a.collaborationEnabled ? 1 : 0, Date.now());
+    .run(
+      id,
+      a.name,
+      a.roleTitle,
+      a.instructions,
+      a.avatarColor,
+      a.provider,
+      a.model,
+      a.collaborationEnabled ? 1 : 0,
+      a.stealthBrowsing ? 1 : 0,
+      Date.now(),
+    );
   return getAgent(id)!;
 }
 
@@ -140,7 +154,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
   const merged = { ...cur, ...patch };
   getDb()
     .prepare(
-      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=? WHERE id=?`,
+      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=? WHERE id=?`,
     )
     .run(
       merged.name,
@@ -150,6 +164,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
       merged.provider,
       merged.model,
       merged.collaborationEnabled ? 1 : 0,
+      merged.stealthBrowsing ? 1 : 0,
       id,
     );
   return getAgent(id);
@@ -157,6 +172,11 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
 
 export function setAgentStatus(id: string, status: AgentStatus): void {
   getDb().prepare(`UPDATE agents SET status=? WHERE id=?`).run(status, id);
+}
+
+export function setAgentHidden(id: string, hidden: boolean): Agent | undefined {
+  getDb().prepare(`UPDATE agents SET hidden=? WHERE id=?`).run(hidden ? 1 : 0, id);
+  return getAgent(id);
 }
 
 export function deleteAgent(id: string): void {
