@@ -25,6 +25,8 @@ your own machine (built for an Apple Silicon Mac mini).
   VM/fingerprint tells. Toggle it per agent; it applies live (no restart).
 - **Grok Bot–style UI** — light iMessage look by default with a one-click dark theme, color-coded
   agents, duplicate / hide-from-sidebar, and a friendly onboarding state.
+- **Native macOS desktop app** (Electron) — run the server locally or connect to your Mac mini as a
+  "commander"; see [Desktop app](#desktop-app-macos).
 - **Multi-model** — pick a provider per agent:
 
 | Provider | Computer-use path | Default model |
@@ -67,6 +69,31 @@ isn't detected, server mode falls back to binding all interfaces (`0.0.0.0`) wit
 Tailscale (or a firewall) so the machine isn't open to your whole LAN/the internet.
 
 Relevant `.env` keys (written by setup): `ACCESS_MODE`, `WEB_HOST`, `WEB_PORT`, `COMPUTER_BIND_HOST`.
+
+## Desktop app (macOS)
+
+Prefer a real app over a browser tab? Build the native macOS desktop app (Electron):
+
+```bash
+npm run app:dist        # builds the UI + Electron app → apps/desktop/release/GrokBot-*.dmg
+```
+
+Open the `.dmg` and drag **GrokBot** to Applications. On first launch it asks how to run:
+
+- **Run on this device** — GrokBot launches its server locally (needs Docker + Node) and shows the UI.
+  Point it at your GrokBot install folder (the one containing `apps/server`); the server runs from
+  there with your system Node, reusing your dependencies and the built agent image.
+- **Connect to a server (commander)** — the app is just the window; give it your server's URL,
+  e.g. `http://<mac-mini-tailscale-ip>:8484`. This is the MacBook-drives-the-Mac-mini setup.
+
+Change the choice anytime from **GrokBot → Settings…** (⌘,). To just develop/run it unpackaged:
+`npm run app:dev`.
+
+### Signing / "app is damaged" note
+The default build is **unsigned** (no Apple Developer account needed). macOS Gatekeeper will warn on
+first open — right-click the app → **Open**, or clear the quarantine flag:
+`xattr -dr com.apple.quarantine /Applications/GrokBot.app`. To ship a signed + notarized build, add
+your Developer ID identity and notarization credentials to `apps/desktop/electron-builder.yml`.
 
 ### Try it without an API key
 
@@ -128,8 +155,8 @@ RUN_DOCKER_TESTS=1 npm run test:integration -w apps/server   # real-Docker conta
 ```
 
 Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
-`packages/shared` (types + action schema), `images/agent-desktop` (the agent OS),
-`scripts/` (setup, doctor).
+`apps/desktop` (Electron macOS app), `packages/shared` (types + action schema),
+`images/agent-desktop` (the agent OS), `scripts/` (setup, doctor).
 
 ## Differences from the real Grok Bot
 

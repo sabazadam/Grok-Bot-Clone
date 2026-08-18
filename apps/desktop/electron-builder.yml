@@ -8,8 +8,12 @@ files:
   - dist/**/*
   - renderer/**/*
   - package.json
-# The local-mode server runs from your existing GrokBot install (system Node), so we
-# don't bundle the Node server/native modules into the app.
+# Bundle the built web UI so local mode always has it (the spawned server is pointed
+# here via WEB_DIST). The Node server itself runs from your GrokBot install via system
+# Node, so we don't bundle the server/native modules into the app.
+extraResources:
+  - from: ../web/dist
+    to: web
 mac:
   category: public.app-category.productivity
   target:

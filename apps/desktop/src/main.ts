@@ -80,9 +80,21 @@ function startLocalServer(s: Settings): { ok: boolean; error?: string } {
     return { ok: false, error: "GrokBot install folder not found. Set it in Settings (the folder containing apps/server)." };
   }
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PORT: String(s.localPort),
+    HOST: "127.0.0.1",
+    // Read the API keys / settings from the install's root .env explicitly.
+    GROKBOT_ENV: path.join(s.repoPath, ".env"),
+  };
+  // In a packaged app, serve the UI bundled inside the app so local mode works even
+  // if the repo's web build is absent. In dev, the server uses the repo's apps/web/dist.
+  if (app.isPackaged) {
+    env.WEB_DIST = path.join(process.resourcesPath, "web");
+  }
   serverProc = spawn(npm, ["run", "start", "-w", "apps/server"], {
     cwd: s.repoPath,
-    env: { ...process.env, PORT: String(s.localPort), HOST: "127.0.0.1" },
+    env,
     stdio: "inherit",
     shell: process.platform === "win32",
   });
