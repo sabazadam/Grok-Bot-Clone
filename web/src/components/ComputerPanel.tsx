@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import RFB from '@novnc/novnc/lib/rfb';
+import RFBImport from '@novnc/novnc/lib/rfb';
 import { api, wsUrl } from '../api';
 import type { Agent } from '../types';
+
+// noVNC ships only a Babel-CJS build; depending on the bundler's interop the
+// default import can resolve to the class itself or to the raw module.exports
+// wrapper ({ __esModule, default: RFB }). Unwrap so both shapes work.
+type RFB = RFBImport;
+const RFB =
+  ((RFBImport as unknown as { default?: typeof RFBImport }).default ??
+    RFBImport) as typeof RFBImport;
 
 interface Props {
   agent: Agent;
@@ -47,7 +55,8 @@ export default function ComputerPanel({ agent, onCollapse }: Props) {
       let rfb: RFB;
       try {
         rfb = new RFB(viewportRef.current, wsUrl(`/api/agents/${agent.id}/vnc`));
-      } catch {
+      } catch (err) {
+        console.error('[botbox] VNC client failed to start:', err);
         scheduleRetry();
         return;
       }

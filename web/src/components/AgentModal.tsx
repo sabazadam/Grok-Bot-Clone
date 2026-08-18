@@ -59,8 +59,7 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, []); // fetch providers once per modal open
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -143,6 +142,8 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
               <span>Name</span>
               <input
                 autoFocus
+                id="agent-name"
+                name="agent-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Piper"
@@ -152,6 +153,8 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
             <label className="field">
               <span>Title</span>
               <input
+                id="agent-title"
+                name="agent-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Product performance"
@@ -163,6 +166,8 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
           <label className="field">
             <span>Role &amp; standing rules</span>
             <textarea
+              id="agent-description"
+              name="agent-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={DESCRIPTION_PLACEHOLDER}
@@ -174,6 +179,8 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
             <label className="field">
               <span>Provider</span>
               <select
+                id="agent-provider"
+                name="agent-provider"
                 value={provider}
                 onChange={(e) => changeProvider(e.target.value)}
                 disabled={providers === null}
@@ -190,6 +197,8 @@ export default function AgentModal({ agent, onClose, onSaved }: Props) {
             <label className="field">
               <span>Model</span>
               <input
+                id="agent-model"
+                name="agent-model"
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
                 placeholder="model id"

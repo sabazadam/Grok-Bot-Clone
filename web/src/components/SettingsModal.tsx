@@ -106,10 +106,12 @@ export default function SettingsModal({ onClose }: Props) {
                     <div className="key-input-row">
                       <input
                         type="password"
+                        id={`apikey-${p.id}`}
+                        name={`apikey-${p.id}`}
                         autoComplete="off"
                         disabled={removing}
                         value={keyEdits[p.id] ?? ''}
-                        placeholder={isSet ? 'configured — enter to replace' : 'not set'}
+                        placeholder={isSet ? 'configured' : 'not set'}
                         onChange={(e) => {
                           setKeyEdits((prev) => ({ ...prev, [p.id]: e.target.value }));
                           setKeyRemovals((prev) => ({ ...prev, [p.id]: false }));
@@ -143,6 +145,8 @@ export default function SettingsModal({ onClose }: Props) {
                   <span>{p.label}</span>
                   <input
                     type="text"
+                    id={`baseurl-${p.id}`}
+                    name={`baseurl-${p.id}`}
                     value={urlEdits[p.id] ?? settings?.baseUrls[p.id] ?? ''}
                     placeholder="http://localhost:11434/v1"
                     onChange={(e) =>

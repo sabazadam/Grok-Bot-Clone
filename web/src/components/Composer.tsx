@@ -31,6 +31,8 @@ export default function Composer({ agent, onSend, onStop }: Props) {
     <div className="composer">
       <textarea
         ref={areaRef}
+        id="composer"
+        name="composer"
         rows={1}
         value={text}
         disabled={disabled}
