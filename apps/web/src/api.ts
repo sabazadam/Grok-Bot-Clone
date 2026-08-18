@@ -39,6 +39,9 @@ export const api = {
   updateAgent: (id: string, body: unknown) => req<Agent>(`/api/agents/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   deleteAgent: (id: string, deleteData: boolean) =>
     req<{ ok: boolean }>(`/api/agents/${id}?deleteData=${deleteData ? "1" : "0"}`, { method: "DELETE" }),
+  duplicateAgent: (id: string) => req<Agent>(`/api/agents/${id}/duplicate`, { method: "POST" }),
+  hideAgent: (id: string, hidden: boolean) =>
+    req<Agent>(`/api/agents/${id}/hide`, { method: "POST", body: JSON.stringify({ hidden }) }),
   startComputer: (id: string) => req(`/api/agents/${id}/computer/start`, { method: "POST" }),
   stopComputer: (id: string) => req(`/api/agents/${id}/computer/stop`, { method: "POST" }),
   restartComputer: (id: string) => req(`/api/agents/${id}/computer/restart`, { method: "POST" }),

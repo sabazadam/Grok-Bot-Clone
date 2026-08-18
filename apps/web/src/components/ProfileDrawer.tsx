@@ -5,15 +5,7 @@ import { api } from "../api";
 import { useStore } from "../store";
 import { Avatar, STATUS_LABELS } from "./Avatar";
 
-export function ProfileDrawer({
-  agent,
-  onClose,
-  onEdit,
-}: {
-  agent: Agent;
-  onClose: () => void;
-  onEdit: () => void;
-}) {
+export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClose: () => void; onEdit: () => void }) {
   const { refreshAgents, selectConversation } = useStore();
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -23,35 +15,40 @@ export function ProfileDrawer({
     void api.memories(agent.id).then(setMemories);
   }, [agent.id]);
 
+  const card = { background: "var(--surface)", border: "1px solid var(--border)" } as const;
+
   return (
-    <div className="fixed inset-0 z-30 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <div
-        className="flex h-full w-[380px] flex-col overflow-y-auto border-l border-neutral-700 bg-neutral-900 p-5"
+        className="flex h-full w-[380px] flex-col overflow-y-auto p-5 gb-pop"
+        style={{ background: "var(--bg)", borderLeft: "1px solid var(--border)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center gap-3">
           <Avatar agent={agent} size={56} />
           <div>
-            <h2 className="text-lg font-bold text-neutral-100">{agent.name}</h2>
-            <p className="text-sm text-neutral-400">{agent.roleTitle || "Agent"}</p>
-            <p className="text-xs text-neutral-500">{STATUS_LABELS[agent.status]}</p>
+            <h2 className="text-lg font-bold" style={{ color: "var(--text)" }}>{agent.name}</h2>
+            <p className="text-sm" style={{ color: "var(--muted)" }}>{agent.roleTitle || "Agent"}</p>
+            <p className="text-xs" style={{ color: "var(--muted)" }}>{STATUS_LABELS[agent.status]}</p>
           </div>
         </div>
 
-        <div className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 p-3 text-xs text-neutral-400">
+        <div className="mb-4 rounded-xl p-3 text-xs" style={card}>
           <div className="mb-1 flex justify-between">
-            <span>Model</span>
-            <span className="text-neutral-200">
-              {PROVIDER_LABELS[agent.provider]} · {agent.model}
-            </span>
+            <span style={{ color: "var(--muted)" }}>Model</span>
+            <span style={{ color: "var(--text)" }}>{PROVIDER_LABELS[agent.provider]} · {agent.model}</span>
           </div>
           <div className="mb-1 flex justify-between">
-            <span>Collaboration</span>
-            <span className="text-neutral-200">{agent.collaborationEnabled ? "may message other agents" : "solo only"}</span>
+            <span style={{ color: "var(--muted)" }}>Collaboration</span>
+            <span style={{ color: "var(--text)" }}>{agent.collaborationEnabled ? "may message other agents" : "solo only"}</span>
+          </div>
+          <div className="mb-1 flex justify-between">
+            <span style={{ color: "var(--muted)" }}>Stealth browsing</span>
+            <span style={{ color: "var(--text)" }}>{agent.stealthBrowsing ? "on (anti-fingerprint)" : "off"}</span>
           </div>
           <div className="flex justify-between">
-            <span>Computer</span>
-            <span className="text-neutral-200">
+            <span style={{ color: "var(--muted)" }}>Computer</span>
+            <span style={{ color: "var(--text)" }}>
               {agent.computer?.state === "running" ? `running (noVNC :${agent.computer.novncPort})` : (agent.computer?.state ?? "none")}
             </span>
           </div>
@@ -59,27 +56,22 @@ export function ProfileDrawer({
 
         {agent.instructions && (
           <>
-            <h3 className="mb-1 text-xs font-semibold tracking-wide text-neutral-500 uppercase">Instructions</h3>
-            <p className="mb-4 rounded-xl border border-neutral-800 bg-neutral-950 p-3 text-sm whitespace-pre-wrap text-neutral-300">
-              {agent.instructions}
-            </p>
+            <h3 className="mb-1 text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--muted)" }}>Instructions</h3>
+            <p className="mb-4 rounded-xl p-3 text-sm whitespace-pre-wrap" style={{ ...card, color: "var(--text)" }}>{agent.instructions}</p>
           </>
         )}
 
-        <h3 className="mb-1 text-xs font-semibold tracking-wide text-neutral-500 uppercase">
-          Memory ({memories.length})
-        </h3>
+        <h3 className="mb-1 text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--muted)" }}>Memory ({memories.length})</h3>
         <div className="mb-4 space-y-1.5">
-          {memories.length === 0 && <p className="text-xs text-neutral-600">Nothing learned yet.</p>}
+          {memories.length === 0 && <p className="text-xs" style={{ color: "var(--muted)" }}>Nothing learned yet.</p>}
           {memories.map((m) => (
-            <div key={m.id} className="group flex items-start gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
-              <span className="mt-0.5 shrink-0 rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-400">{m.kind}</span>
-              <p className="flex-1 text-xs text-neutral-300">{m.content}</p>
+            <div key={m.id} className="group flex items-start gap-2 rounded-lg px-3 py-2" style={card}>
+              <span className="mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-[10px]" style={{ background: "var(--surface-2)", color: "var(--muted)" }}>{m.kind}</span>
+              <p className="flex-1 text-xs" style={{ color: "var(--text)" }}>{m.content}</p>
               <button
-                onClick={() => {
-                  void api.deleteMemory(m.id).then(() => setMemories((cur) => cur.filter((x) => x.id !== m.id)));
-                }}
-                className="hidden text-xs text-neutral-600 hover:text-red-400 group-hover:block"
+                onClick={() => void api.deleteMemory(m.id).then(() => setMemories((cur) => cur.filter((x) => x.id !== m.id)))}
+                className="hidden text-xs group-hover:block"
+                style={{ color: "var(--muted)" }}
                 title="Forget"
               >
                 ✕
@@ -89,23 +81,21 @@ export function ProfileDrawer({
         </div>
 
         <div className="mt-auto space-y-2">
-          <button
-            onClick={onEdit}
-            className="w-full rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-200 hover:bg-neutral-800"
-          >
+          <button onClick={onEdit} className="w-full rounded-full px-4 py-2 text-sm" style={{ border: "1px solid var(--border)", color: "var(--text)" }}>
             Edit profile
           </button>
           {!confirmDelete ? (
             <button
               onClick={() => setConfirmDelete(true)}
-              className="w-full rounded-lg border border-red-900/70 px-4 py-2 text-sm text-red-400 hover:bg-red-950/50"
+              className="w-full rounded-full px-4 py-2 text-sm"
+              style={{ border: "1px solid color-mix(in srgb, var(--danger) 50%, transparent)", color: "var(--danger)" }}
             >
               Delete agent
             </button>
           ) : (
-            <div className="rounded-xl border border-red-900/70 bg-red-950/30 p-3">
-              <p className="mb-2 text-xs text-red-300">Delete {agent.name}? Its conversation and role are removed.</p>
-              <label className="mb-2 flex items-center gap-2 text-xs text-red-200">
+            <div className="rounded-xl p-3" style={{ background: "color-mix(in srgb, var(--danger) 10%, var(--bg))", border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)" }}>
+              <p className="mb-2 text-xs" style={{ color: "var(--danger)" }}>Delete {agent.name}? Its conversation and role are removed.</p>
+              <label className="mb-2 flex items-center gap-2 text-xs" style={{ color: "var(--danger)" }}>
                 <input type="checkbox" checked={deleteData} onChange={(e) => setDeleteData(e.target.checked)} />
                 Also erase its computer's files (volume)
               </label>
@@ -117,14 +107,12 @@ export function ProfileDrawer({
                     selectConversation(null);
                     onClose();
                   }}
-                  className="flex-1 rounded-lg bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-600"
+                  className="flex-1 rounded-full px-3 py-1.5 text-xs font-semibold text-white"
+                  style={{ background: "var(--danger)" }}
                 >
                   Delete
                 </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="flex-1 rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300"
-                >
+                <button onClick={() => setConfirmDelete(false)} className="flex-1 rounded-full px-3 py-1.5 text-xs" style={{ border: "1px solid var(--border)", color: "var(--text)" }}>
                   Cancel
                 </button>
               </div>

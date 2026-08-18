@@ -1,13 +1,16 @@
 import { useMemo, useState } from "react";
 import { StoreProvider, useStore } from "./store";
+import { useTheme } from "./theme";
 import { Sidebar } from "./components/Sidebar";
 import { ChatView } from "./components/ChatView";
 import { ComputerPanel } from "./components/ComputerPanel";
 import { AgentModal, GroupModal } from "./components/AgentModal";
 import { ProfileDrawer } from "./components/ProfileDrawer";
+import { EmptyState } from "./components/EmptyState";
 
 function Shell() {
   const { state } = useStore();
+  const theme = useTheme();
   const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showComputer, setShowComputer] = useState(false);
@@ -29,11 +32,14 @@ function Shell() {
       : null;
 
   return (
-    <div className="flex h-full bg-neutral-950 text-neutral-100">
-      <Sidebar onNewAgent={() => setShowNewAgent(true)} onNewGroup={() => setShowNewGroup(true)} />
+    <div className="flex h-full" style={{ background: "var(--bg)", color: "var(--text)" }}>
+      <Sidebar theme={theme} onNewAgent={() => setShowNewAgent(true)} onNewGroup={() => setShowNewGroup(true)} />
       <main className="flex min-w-0 flex-1 flex-col">
         {setupWarning && (
-          <div className="border-b border-amber-900/60 bg-amber-950/50 px-4 py-1.5 text-xs text-amber-300">
+          <div
+            className="px-4 py-1.5 text-xs"
+            style={{ background: "color-mix(in srgb, var(--warn) 15%, var(--bg))", color: "var(--warn)", borderBottom: "1px solid var(--border)" }}
+          >
             {setupWarning}
           </div>
         )}
@@ -51,12 +57,7 @@ function Shell() {
               )}
             </>
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-neutral-600">
-              <h2 className="text-xl font-semibold text-neutral-400">Your AI teammates</h2>
-              <p className="max-w-sm text-center text-sm">
-                Each agent gets a job, a memory, and its own computer. Pick a conversation or create a new agent.
-              </p>
-            </div>
+            <EmptyState onNewAgent={() => setShowNewAgent(true)} />
           )}
         </div>
       </main>
