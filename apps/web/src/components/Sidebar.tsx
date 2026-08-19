@@ -5,6 +5,7 @@ import type { LastSeenMap } from "../lastSeen";
 import { useStore } from "../store";
 import type { useTheme } from "../theme";
 import { Avatar, GroupAvatar } from "./Avatar";
+import { RoleBadges } from "./Badges";
 import { timeLabel } from "../format";
 
 function isUnread(conv: Conversation | undefined, selectedId: string | null, lastSeen: LastSeenMap): boolean {
@@ -143,9 +144,12 @@ function AgentRow({
         <Avatar agent={agent} size={36} showStatus />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-[14px] font-semibold" style={{ color: "var(--text)" }}>
-              {conv?.pinned ? "📌 " : ""}
-              {agent.name}
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+                {conv?.pinned ? "📌 " : ""}
+                {agent.name}
+              </span>
+              <RoleBadges agent={agent} compact />
             </span>
             {!waiting && (
               <span className="shrink-0 text-[11px]" style={{ color: "var(--muted)" }}>

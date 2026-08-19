@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Agent, FaceShape, Provider } from "@grokbot/shared";
-import { FACE_COLORS, FACE_SHAPES } from "@grokbot/shared";
+import type { Agent, FaceShape, Provider, ToolPolicyName } from "@grokbot/shared";
+import { FACE_COLORS, FACE_SHAPES, TOOL_POLICY_LABELS } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 import { BotFace, shapeForAgent } from "./Avatar";
@@ -32,6 +32,8 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
   const [stealthBrowsing, setStealthBrowsing] = useState(existing?.stealthBrowsing ?? true);
   const [isTeamLead, setIsTeamLead] = useState(existing?.isTeamLead ?? false);
   const [team, setTeam] = useState(existing?.team ?? "");
+  const [toolPolicy, setToolPolicy] = useState<ToolPolicyName>(existing?.toolPolicy ?? "full");
+  const [toolAllow, setToolAllow] = useState((existing?.toolAllow ?? []).join(", "));
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -59,6 +61,11 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
         stealthBrowsing,
         isTeamLead,
         team: team.trim(),
+        toolPolicy,
+        toolAllow:
+          toolPolicy === "custom"
+            ? toolAllow.split(",").map((s) => s.trim()).filter(Boolean)
+            : undefined,
       };
       if (existing) {
         await api.updateAgent(existing.id, body);
@@ -217,6 +224,28 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
             No API key configured for {selectedProvider.label}. Add it to your .env and restart the server (or use model <code>mock-scripted</code>).
           </p>
         )}
+
+        <div className="mb-3">
+          <label className={label} style={labelStyle}>
+            Tool policy <span className="font-normal" style={{ color: "var(--muted)" }}>(what this agent is allowed to use)</span>
+          </label>
+          <select value={toolPolicy} onChange={(e) => setToolPolicy(e.target.value as ToolPolicyName)} className={field} style={fieldStyle}>
+            {(Object.keys(TOOL_POLICY_LABELS) as ToolPolicyName[]).map((p) => (
+              <option key={p} value={p}>
+                {TOOL_POLICY_LABELS[p]}
+              </option>
+            ))}
+          </select>
+          {toolPolicy === "custom" && (
+            <input
+              value={toolAllow}
+              onChange={(e) => setToolAllow(e.target.value)}
+              placeholder="comma-separated tools: bash, computer, call_plugin, delegate_task…"
+              className={`${field} mt-2`}
+              style={fieldStyle}
+            />
+          )}
+        </div>
 
         <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
           <input type="checkbox" checked={isTeamLead} onChange={(e) => setIsTeamLead(e.target.checked)} className="h-4 w-4" />

@@ -44,6 +44,18 @@ export function isHandoffLine(text: string): boolean {
   return /^(Messaged |From |→\s*@)/.test(text);
 }
 
+export function isDelegationLine(text: string): boolean {
+  return /^Delegated to /.test(text);
+}
+
+/** Names listed in a "Delegated to A, B" chip (empty if it used the "N specialist(s)" fallback). */
+export function delegationTargets(text: string): string[] {
+  const m = text.match(/^Delegated to (.+)$/);
+  if (!m) return [];
+  if (/specialist\(s\)$/.test(m[1]!)) return [];
+  return m[1]!.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 export function newDividerIndex(messageIds: string[], lastSeenId?: string, lastUserIdx = -1): number {
   if (lastSeenId) {
     const seen = messageIds.indexOf(lastSeenId);

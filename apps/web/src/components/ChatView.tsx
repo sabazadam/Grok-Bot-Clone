@@ -3,7 +3,9 @@ import type { Agent, Attachment, Conversation, Message } from "@grokbot/shared";
 import { api, type IncomingAttachment } from "../api";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
-import { dayStamp, handoffPeerName, handoffVerb, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
+import { DelegationCard } from "./DelegationCard";
+import { DelegationTree } from "./DelegationTree";
+import { dayStamp, handoffPeerName, handoffVerb, isDelegationLine, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
 
 const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const MAX_ATTACH_FILES = 6;
@@ -156,11 +158,13 @@ function Bubble({
   agent,
   highlight,
   onOpenHandoff,
+  onOpenTree,
 }: {
   message: Message;
   agent?: Agent;
   highlight?: boolean;
   onOpenHandoff: (conversationId: string) => void;
+  onOpenTree?: () => void;
 }) {
   const { state } = useStore();
   const [busy, setBusy] = useState(false);
@@ -235,6 +239,10 @@ function Bubble({
         </div>
       </div>
     );
+  }
+
+  if (isDelegationLine(message.text)) {
+    return <DelegationCard message={message} sender={agent} onOpen={onOpenHandoff} onOpenTree={onOpenTree} />;
   }
 
   if (isHandoffLine(message.text) || message.relatedConversationId) {
@@ -340,6 +348,7 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<IncomingAttachment[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [showTree, setShowTree] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -503,6 +512,7 @@ export function ChatView({
               agent={m.sender.kind === "agent" ? agentById.get(m.sender.agentId) : undefined}
               highlight={m.id === highlightMessageId}
               onOpenHandoff={onOpenHandoff}
+              onOpenTree={() => setShowTree(true)}
             />
           </div>
         ))}
@@ -643,6 +653,7 @@ export function ChatView({
           </div>
         </div>
       </footer>
+      {showTree && <DelegationTree onClose={() => setShowTree(false)} />}
     </section>
   );
 }
