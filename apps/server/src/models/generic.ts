@@ -105,6 +105,74 @@ const VALID_ACTIONS = new Set([
   "cursor_position",
 ]);
 
+function parseProtocolAction(obj: Record<string, unknown>, id: string): ToolInvocation | undefined {
+  if (obj.computer && typeof obj.computer === "object") {
+    const action = obj.computer as ComputerAction;
+    if (VALID_ACTIONS.has(action.type)) return { id, tool: "computer", action };
+  }
+  if (obj.bash && typeof obj.bash === "object") {
+    return { id, tool: "bash", command: String((obj.bash as Record<string, unknown>).command ?? "") };
+  }
+  if (typeof obj.bash === "string") {
+    return { id, tool: "bash", command: obj.bash };
+  }
+  if (obj.update_memory && typeof obj.update_memory === "object") {
+    const m = obj.update_memory as Record<string, unknown>;
+    const kind = ["preference", "fact", "summary"].includes(String(m.kind))
+      ? (String(m.kind) as "preference" | "fact" | "summary")
+      : "fact";
+    return { id, tool: "update_memory", memoryKind: kind, content: String(m.content ?? "") };
+  }
+  if (obj.request_approval && typeof obj.request_approval === "object") {
+    const r = obj.request_approval as Record<string, unknown>;
+    return { id, tool: "request_approval", description: String(r.description ?? ""), reason: String(r.reason ?? "") };
+  }
+  if (obj.save_skill && typeof obj.save_skill === "object") {
+    const s = obj.save_skill as Record<string, unknown>;
+    return {
+      id,
+      tool: "save_skill",
+      name: String(s.name ?? ""),
+      description: String(s.description ?? ""),
+      instructions: String(s.instructions ?? ""),
+    };
+  }
+  if (obj.create_agent && typeof obj.create_agent === "object") {
+    const a = obj.create_agent as Record<string, unknown>;
+    return {
+      id,
+      tool: "create_agent",
+      name: String(a.name ?? ""),
+      roleTitle: String(a.roleTitle ?? ""),
+      instructions: String(a.instructions ?? ""),
+      isTeamLead: Boolean(a.isTeamLead),
+    };
+  }
+  if (obj.create_routine && typeof obj.create_routine === "object") {
+    const r = obj.create_routine as Record<string, unknown>;
+    return {
+      id,
+      tool: "create_routine",
+      name: String(r.name ?? ""),
+      prompt: String(r.prompt ?? ""),
+      intervalMinutes: r.intervalMinutes !== undefined ? Number(r.intervalMinutes) : undefined,
+      schedule: r.schedule ? String(r.schedule) : undefined,
+      skillName: r.skillName ? String(r.skillName) : undefined,
+    };
+  }
+  if (obj.send_message && typeof obj.send_message === "object") {
+    return { id, tool: "send_message", text: String((obj.send_message as Record<string, unknown>).text ?? "") };
+  }
+  if (typeof obj.send_message === "string") {
+    return { id, tool: "send_message", text: obj.send_message };
+  }
+  if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
+    const s = obj.send_message_to_agent as Record<string, unknown>;
+    return { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };
+  }
+  return undefined;
+}
+
 export class GenericAdapter implements ModelAdapter {
   private fetchFn: typeof fetch;
   private messages: Msg[] = [];
@@ -206,75 +274,29 @@ export class GenericAdapter implements ModelAdapter {
     }
     this.parseFailures = 0;
 
-    if (obj.done === true || typeof obj.message === "string") {
-      return { kind: "final", text: String(obj.message ?? "Done.") };
-    }
-
     const id = `g_${++this.counter}`;
     const thought = typeof obj.thought === "string" ? obj.thought : undefined;
-    let inv: ToolInvocation | undefined;
+    const inv = parseProtocolAction(obj, id);
 
-    if (obj.computer && typeof obj.computer === "object") {
-      const action = obj.computer as ComputerAction;
-      if (VALID_ACTIONS.has(action.type)) inv = { id, tool: "computer", action };
-    } else if (obj.bash && typeof obj.bash === "object") {
-      inv = { id, tool: "bash", command: String((obj.bash as Record<string, unknown>).command ?? "") };
-    } else if (typeof obj.bash === "string") {
-      inv = { id, tool: "bash", command: obj.bash };
-    } else if (obj.update_memory && typeof obj.update_memory === "object") {
-      const m = obj.update_memory as Record<string, unknown>;
-      const kind = ["preference", "fact", "summary"].includes(String(m.kind)) ? (String(m.kind) as "preference" | "fact" | "summary") : "fact";
-      inv = { id, tool: "update_memory", memoryKind: kind, content: String(m.content ?? "") };
-    } else if (obj.request_approval && typeof obj.request_approval === "object") {
-      const r = obj.request_approval as Record<string, unknown>;
-      inv = { id, tool: "request_approval", description: String(r.description ?? ""), reason: String(r.reason ?? "") };
-    } else if (obj.save_skill && typeof obj.save_skill === "object") {
-      const s = obj.save_skill as Record<string, unknown>;
-      inv = {
-        id,
-        tool: "save_skill",
-        name: String(s.name ?? ""),
-        description: String(s.description ?? ""),
-        instructions: String(s.instructions ?? ""),
-      };
-    } else if (obj.create_agent && typeof obj.create_agent === "object") {
-      const a = obj.create_agent as Record<string, unknown>;
-      inv = {
-        id,
-        tool: "create_agent",
-        name: String(a.name ?? ""),
-        roleTitle: String(a.roleTitle ?? ""),
-        instructions: String(a.instructions ?? ""),
-        isTeamLead: Boolean(a.isTeamLead),
-      };
-    } else if (obj.create_routine && typeof obj.create_routine === "object") {
-      const r = obj.create_routine as Record<string, unknown>;
-      inv = {
-        id,
-        tool: "create_routine",
-        name: String(r.name ?? ""),
-        prompt: String(r.prompt ?? ""),
-        intervalMinutes: r.intervalMinutes !== undefined ? Number(r.intervalMinutes) : undefined,
-        schedule: r.schedule ? String(r.schedule) : undefined,
-        skillName: r.skillName ? String(r.skillName) : undefined,
-      };
-    } else if (obj.send_message && typeof obj.send_message === "object") {
-      inv = { id, tool: "send_message", text: String((obj.send_message as Record<string, unknown>).text ?? "") };
-    } else if (typeof obj.send_message === "string") {
-      inv = { id, tool: "send_message", text: obj.send_message };
-    } else if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
-      const s = obj.send_message_to_agent as Record<string, unknown>;
-      inv = { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };
+    // Explicit finish. Extra keys (models often echo the schema) must not run.
+    if (obj.done === true) {
+      return { kind: "final", text: String(obj.message ?? "Done.") };
+    }
+    // A stray top-level `message` string is a common LLM extra — do not treat it as
+    // completion when a real action is present. That used to drop bash/clicks on
+    // the default xAI/DeepSeek path.
+    if (inv) {
+      return { kind: "act", invocations: [inv], assistantText: thought };
+    }
+    if (typeof obj.message === "string") {
+      return { kind: "final", text: obj.message };
     }
 
-    if (!inv) {
-      this.messages.push({
-        role: "user",
-        content: `Unrecognized action ${JSON.stringify(Object.keys(obj))}. Use the documented protocol.`,
-      });
-      return this.call();
-    }
-    return { kind: "act", invocations: [inv], assistantText: thought };
+    this.messages.push({
+      role: "user",
+      content: `Unrecognized action ${JSON.stringify(Object.keys(obj))}. Use the documented protocol.`,
+    });
+    return this.call();
   }
 
   async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {

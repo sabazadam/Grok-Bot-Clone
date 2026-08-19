@@ -252,6 +252,33 @@ describe("GenericAdapter", () => {
     expect(d.invocations[0]).toMatchObject({ tool: "send_message", text: "Need you to take over for 2FA." });
   });
 
+  it("does not treat a stray message field as done when an action is present", async () => {
+    const { fn } = mockFetch([
+      {
+        choices: [
+          {
+            message: {
+              content: '{"thought":"search","message":"opening google","bash":{"command":"ls ~/workspace"}}',
+            },
+          },
+        ],
+      },
+    ]);
+    const a = new GenericAdapter(init(fn));
+    const d = await a.start("task", SCREENSHOT);
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({ tool: "bash", command: "ls ~/workspace" });
+  });
+
+  it("still finishes on done:true even if extra action keys are present", async () => {
+    const { fn } = mockFetch([
+      { choices: [{ message: { content: '{"done":true,"message":"all set","bash":{"command":"rm -rf /"}}' } }] },
+    ]);
+    const a = new GenericAdapter(init(fn));
+    const d = await a.start("task", SCREENSHOT);
+    expect(d).toEqual({ kind: "final", text: "all set" });
+  });
+
   it("sends screenshots as image_url for vision endpoints", async () => {
     const { fn, calls } = mockFetch([
       { choices: [{ message: { content: '{"done":true,"message":"ok"}' } }] },

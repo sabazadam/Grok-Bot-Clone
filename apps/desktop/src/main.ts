@@ -10,7 +10,7 @@
  * (which already has dependencies + the built agent image), so we avoid bundling
  * native modules into the app.
  */
-import { app, BrowserWindow, Menu, dialog, shell, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, dialog, shell, ipcMain, type WebContents } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
@@ -125,7 +125,7 @@ async function launch(): Promise<void> {
   }
 
   if (s.mode === "remote") {
-    if (!s.remoteUrl) {
+    if (!s.remoteUrl || !isHttpUrl(s.remoteUrl)) {
       createWindow("about:blank");
       openSettingsWindow(true);
       return;
@@ -156,6 +156,15 @@ async function launch(): Promise<void> {
   }
 }
 
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function createWindow(url: string): void {
   win = new BrowserWindow({
     width: 1280,
@@ -168,15 +177,17 @@ function createWindow(url: string): void {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: path.join(__dirname, "preload.js"),
+      // Settings IPC stays on the settings window only. The chat UI (and commander
+      // remote URLs) must not be able to change install path / spawn the server.
     },
   });
   // Open target=_blank / external links in the OS browser, keep app navigation in-app.
   win.webContents.setWindowOpenHandler(({ url: u }) => {
-    shell.openExternal(u);
+    if (!isHttpUrl(u)) return { action: "deny" };
+    void shell.openExternal(u);
     return { action: "deny" };
   });
-  if (url && url !== "about:blank") win.loadURL(url);
+  if (url && url !== "about:blank" && isHttpUrl(url)) win.loadURL(url);
   else win.loadFile(path.join(__dirname, "..", "renderer", "loading.html")).catch(() => undefined);
   win.on("closed", () => {
     win = null;
@@ -209,10 +220,34 @@ function openSettingsWindow(firstRun = false): void {
   });
 }
 
-// ── IPC from the settings page ──
-ipcMain.handle("grokbot:getSettings", () => loadSettings());
-ipcMain.handle("grokbot:saveSettings", async (_e, partial: Partial<Settings>) => {
-  const next = { ...loadSettings(), ...partial };
+function fromSettingsWindow(sender: WebContents): boolean {
+  return !!settingsWin && sender === settingsWin.webContents;
+}
+
+function sanitizeSettingsPatch(partial: unknown): Partial<Settings> {
+  if (!partial || typeof partial !== "object") return {};
+  const p = partial as Record<string, unknown>;
+  const out: Partial<Settings> = {};
+  if (p.mode === "local" || p.mode === "remote" || p.mode === null) out.mode = p.mode;
+  if (typeof p.remoteUrl === "string") {
+    const url = p.remoteUrl.trim();
+    if (!url || isHttpUrl(url)) out.remoteUrl = url;
+  }
+  if (typeof p.repoPath === "string") out.repoPath = p.repoPath;
+  if (typeof p.localPort === "number" && Number.isInteger(p.localPort) && p.localPort > 0 && p.localPort < 65536) {
+    out.localPort = p.localPort;
+  }
+  return out;
+}
+
+// ── IPC from the settings page (never from the chat / commander window) ──
+ipcMain.handle("grokbot:getSettings", (e) => {
+  if (!fromSettingsWindow(e.sender)) return { mode: null, remoteUrl: "", repoPath: "", localPort: 8484 };
+  return loadSettings();
+});
+ipcMain.handle("grokbot:saveSettings", async (e, partial: unknown) => {
+  if (!fromSettingsWindow(e.sender)) return loadSettings();
+  const next = { ...loadSettings(), ...sanitizeSettingsPatch(partial) };
   saveSettings(next);
   // apply immediately
   stopLocalServer();
@@ -220,7 +255,8 @@ ipcMain.handle("grokbot:saveSettings", async (_e, partial: Partial<Settings>) =>
   await launch();
   return next;
 });
-ipcMain.handle("grokbot:pickFolder", async () => {
+ipcMain.handle("grokbot:pickFolder", async (e) => {
+  if (!fromSettingsWindow(e.sender)) return null;
   const res = await dialog.showOpenDialog({ properties: ["openDirectory"] });
   return res.canceled ? null : res.filePaths[0];
 });
