@@ -29,7 +29,16 @@ export async function callPlugin(pluginId: string, toolName: string, args: Recor
   if (!plugin.enabled) throw new Error(`plugin "${plugin.name}" is disabled`);
   if (plugin.kind === "webhook") {
     if (!plugin.url) throw new Error(`webhook plugin "${plugin.name}" has no URL`);
-    const res = await fetch(plugin.url, {
+    let webhook: URL;
+    try {
+      webhook = new URL(plugin.url);
+    } catch {
+      throw new Error(`webhook plugin "${plugin.name}" has an invalid URL`);
+    }
+    if (webhook.protocol !== "http:" && webhook.protocol !== "https:") {
+      throw new Error(`webhook plugin "${plugin.name}" is not http(s)`);
+    }
+    const res = await fetch(webhook.toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ tool: toolName, arguments: args, plugin: plugin.name }),

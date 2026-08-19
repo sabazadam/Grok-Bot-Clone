@@ -533,6 +533,17 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (parsed.data.kind === "webhook" && !parsed.data.url) {
       return reply.code(400).send({ error: "Webhook plugins need a URL" });
     }
+    if (parsed.data.kind === "webhook" && parsed.data.url) {
+      let webhook: URL;
+      try {
+        webhook = new URL(parsed.data.url);
+      } catch {
+        return reply.code(400).send({ error: "Webhook plugins need an http(s) URL" });
+      }
+      if (webhook.protocol !== "http:" && webhook.protocol !== "https:") {
+        return reply.code(400).send({ error: "Webhook plugins need an http(s) URL" });
+      }
+    }
     const plugin = store.createPlugin(parsed.data);
     broadcast({ type: "plugin_updated", plugin });
     return plugin;
@@ -551,6 +562,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       })
       .safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (parsed.data.url) {
+      try {
+        const webhook = new URL(parsed.data.url);
+        if (webhook.protocol !== "http:" && webhook.protocol !== "https:") {
+          return reply.code(400).send({ error: "Webhook plugins need an http(s) URL" });
+        }
+      } catch {
+        return reply.code(400).send({ error: "Webhook plugins need an http(s) URL" });
+      }
+    }
     const plugin = store.updatePlugin(id, parsed.data);
     if (!plugin) return reply.code(404).send({ error: "not found" });
     broadcast({ type: "plugin_updated", plugin });

@@ -86,6 +86,28 @@ export function defaultModelFor(provider: Provider): string {
   return PROVIDER_DEFAULT_MODELS[provider];
 }
 
+/**
+ * Browser pages on the public internet must not drive this unauthenticated API.
+ * Same-origin, curl, Electron, localhost, Tailscale, and RFC1918 origins are fine.
+ */
+export function isAllowedCorsOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  let hostname: string;
+  try {
+    hostname = new URL(origin).hostname.replace(/^\[|\]$/g, "");
+  } catch {
+    return false;
+  }
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return true;
+  if (hostname.endsWith(".localhost") || hostname.endsWith(".ts.net")) return true;
+  if (config.host && config.host !== "0.0.0.0" && hostname === config.host) return true;
+  if (/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  if (/^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  return false;
+}
+
 export function ensureDataDirs(): void {
   fs.mkdirSync(config.dataDir, { recursive: true });
   fs.mkdirSync(path.join(config.dataDir, "screenshots"), { recursive: true });

@@ -244,7 +244,7 @@ export function setAgentStatus(id: string, status: AgentStatus): void {
   getDb().prepare(`UPDATE agents SET status=? WHERE id=?`).run(status, id);
 }
 
-/** Switch leftover mock-scripted teammates onto a live provider once a key exists. */
+/** Switch leftover mock-scripted teammates onto a live provider. Call explicitly (do not run on every boot). */
 export function promoteMockAgents(provider: Provider, model: string): Agent[] {
   const changed: Agent[] = [];
   for (const agent of listAgents()) {

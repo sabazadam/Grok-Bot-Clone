@@ -3,6 +3,7 @@
  * Safe to re-run: updates existing demo agents instead of duplicating them.
  */
 import * as store from "../src/store.js";
+import { liveModelConfig } from "../src/config.js";
 
 function upsert(input: store.NewAgent) {
   const existing = store.getAgentByName(input.name);
@@ -12,14 +13,18 @@ function upsert(input: store.NewAgent) {
   return agent;
 }
 
+const live = liveModelConfig();
+const seedProvider = live?.provider ?? "generic";
+const seedModel = live?.model ?? "mock-scripted";
+
 const lead = upsert({
   name: "TikTok Lead",
   roleTitle: "Team lead",
   instructions: "Coordinate TikTok managers.",
   avatarColor: "#F46A1B",
   avatarShape: "drop",
-  provider: "generic",
-  model: process.env.XAI_API_KEY ? "deepseek-v4-flash" : "mock-scripted",
+  provider: seedProvider,
+  model: seedModel,
   collaborationEnabled: true,
   stealthBrowsing: true,
   isTeamLead: true,
@@ -32,8 +37,8 @@ const manager = upsert({
   instructions: "Post and report.",
   avatarColor: "#8B5A3C",
   avatarShape: "hexagon",
-  provider: "generic",
-  model: process.env.XAI_API_KEY ? "deepseek-v4-flash" : "mock-scripted",
+  provider: seedProvider,
+  model: seedModel,
   collaborationEnabled: true,
   stealthBrowsing: true,
   team: "Social Media",
@@ -45,8 +50,8 @@ const kinguin = upsert({
   instructions: "Own the Kinguin account.",
   avatarColor: "#6B4F3A",
   avatarShape: "cloud",
-  provider: "generic",
-  model: process.env.XAI_API_KEY ? "deepseek-v4-flash" : "mock-scripted",
+  provider: seedProvider,
+  model: seedModel,
   collaborationEnabled: true,
   stealthBrowsing: true,
   team: "Kinguin",
@@ -58,8 +63,8 @@ const brainstormer = upsert({
   instructions: "Brainstorm campaigns.",
   avatarColor: "#E56B8A",
   avatarShape: "blob",
-  provider: "generic",
-  model: process.env.XAI_API_KEY ? "deepseek-v4-flash" : "mock-scripted",
+  provider: seedProvider,
+  model: seedModel,
   collaborationEnabled: true,
   stealthBrowsing: true,
   team: "",
@@ -71,8 +76,8 @@ const seeker = upsert({
   instructions: "Find roles.",
   avatarColor: "#F46A1B",
   avatarShape: "triangle",
-  provider: "generic",
-  model: process.env.XAI_API_KEY ? "deepseek-v4-flash" : "mock-scripted",
+  provider: seedProvider,
+  model: seedModel,
   collaborationEnabled: true,
   stealthBrowsing: true,
   team: "",

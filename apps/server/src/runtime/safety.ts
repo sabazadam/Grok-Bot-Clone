@@ -58,6 +58,24 @@ export function evaluateInvocation(inv: ToolInvocation): SafetyVerdict {
     }
     return { needsApproval: false };
   }
+  if (inv.tool === "call_plugin") {
+    return {
+      needsApproval: true,
+      reason: `Calling plugin ${inv.pluginId}.${inv.toolName} (runs on the host, not the agent sandbox)`,
+    };
+  }
+  if (inv.tool === "create_routine") {
+    return {
+      needsApproval: true,
+      reason: "Scheduling repeating work that spends model/computer time on its own",
+    };
+  }
+  if (inv.tool === "create_agent") {
+    return {
+      needsApproval: true,
+      reason: "Creating a teammate boots a new computer and copies your model settings",
+    };
+  }
   // request_approval is itself the approval path; memory/messaging/complete are safe
   return { needsApproval: false };
 }
