@@ -44,7 +44,7 @@ async function main() {
       const active = new Set(
         store
           .listAgents()
-          .filter((a) => a.status === "working" || a.status === "waiting_approval")
+          .filter((a) => service.protectsComputerFromIdleStop(a.status))
           .map((a) => a.id),
       );
       const stopped = await computerManager.stopIdle(active);

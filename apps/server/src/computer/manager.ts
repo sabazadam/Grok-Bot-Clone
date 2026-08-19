@@ -36,13 +36,32 @@ function parseMemory(s: string): number {
 const CONTAINER_PREFIX = "agentos-";
 const VOLUME_SUFFIX = "-home";
 
+/** Serialize create/start so concurrent tasks cannot blow past MAX_RUNNING_COMPUTERS. */
+export function createChainLock(): <T>(fn: () => Promise<T>) => Promise<T> {
+  let chain = Promise.resolve();
+  return function runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    const done = chain.then(fn, fn);
+    chain = done.then(
+      () => undefined,
+      () => undefined,
+    );
+    return done;
+  };
+}
+
 export class ComputerManager {
   private docker: Docker;
   /** agentId -> last actuator interaction, for idle stop */
   private lastUsed = new Map<string, number>();
+  private readonly runExclusive = createChainLock();
 
   constructor(socketPath: string = config.dockerSocket) {
     this.docker = new Docker({ socketPath });
+  }
+
+  /** Run eviction + boot as one critical section (used by acquireComputer). */
+  exclusiveStart<T>(fn: () => Promise<T>): Promise<T> {
+    return this.runExclusive(fn);
   }
 
   containerName(agentId: string): string {
@@ -159,6 +178,18 @@ export class ComputerManager {
    * Creates container + volume on first call. Waits for the actuator to be healthy.
    */
   async ensureRunning(agentId: string): Promise<ComputerInfo> {
+    // Mark activity immediately so the idle-stop sweep cannot kill a desktop
+    // that is still booting (lastUsed may be stale from a previous session).
+    this.touch(agentId);
+    return this.runExclusive(() => this.ensureRunningUnlocked(agentId));
+  }
+
+  /**
+   * Boot without taking the start lock. Caller must already be inside
+   * `exclusiveStart` / `runExclusive` (e.g. acquireComputer after eviction).
+   */
+  async ensureRunningUnlocked(agentId: string): Promise<ComputerInfo> {
+    this.touch(agentId);
     if (!(await this.imageAvailable())) {
       throw new Error(
         `Docker image "${config.agentDesktopImage}" not found. Build it with: npm run image:build`,
