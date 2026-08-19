@@ -10,7 +10,8 @@ your own machine (built for an Apple Silicon Mac mini).
 - **iMessage-style chat** — agents are teammates in a sidebar. Give them a name, a job, and
   standing instructions; message them tasks.
 - **Watch them work** — the "Agent computer" panel shows the live desktop (noVNC) with a running
-  feed of every click, keystroke, and command.
+  feed of clicks, keystrokes, and commands. Chat stays quiet: agents report only when necessary
+  (a result, a blocker, or an approval), same as Grok Bot.
 - **Agents talk to each other** — direct messages and group chats with @mentions; delegation and
   handoffs happen on their own computers, with hard turn budgets so they can't loop forever.
 - **Approvals** — consequential actions (deleting, sending, purchasing, `rm -rf`, force-pushes…)
@@ -165,7 +166,14 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Computers | one shared cloud VM per user (per-bot screens) | **one isolated OS per agent**, local |
 | Models | Grok only | Anthropic / OpenAI / Gemini / any OpenAI-compatible |
 | Hosting | xAI cloud | your machine |
-| Connectors / teach-a-task / mobile apps | yes | intentionally out of scope |
+| Reporting | finish the job; come back for a result, blocker, or approval | same policy: sandbox actions stay on Agent Computer; chat is `send_message` / `task_complete` / approvals only |
+| Connectors / Plugins / MCP | yes | not yet |
+| Skills, routines, teach-a-task | yes | not yet |
+| Chat attachments, threads, reactions | yes | not yet |
+| Notifications (done / needs input) | desktop + iOS | not yet |
+| Search / pin / @everyone | yes | not yet |
+| Mobile apps | iOS | not yet |
+| Local-computer execution | optional, approval-gated | no (agents stay in their container) |
 
 ## Security notes
 

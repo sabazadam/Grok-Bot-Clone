@@ -18,6 +18,8 @@ interface State {
   tasks: Record<string, Task>;
   /** latest live activity per agent */
   liveSteps: Record<string, LiveStep>;
+  /** recent sandbox actions per agent (computer panel log, not chat) */
+  liveLogs: Record<string, LiveStep[]>;
   selectedId: string | null;
 }
 
@@ -79,14 +81,21 @@ function reducer(state: State, action: Action): State {
           return { ...state, conversations: upsert(state.conversations, e.conversation) };
         case "task_updated":
           return { ...state, tasks: { ...state.tasks, [e.task.id]: e.task } };
-        case "task_step":
+        case "task_step": {
+          const step: LiveStep = {
+            taskId: e.taskId,
+            caption: e.caption,
+            screenshotUrl: e.screenshotUrl,
+            at: Date.now(),
+          };
+          const prev = state.liveLogs[e.agentId] ?? [];
+          const sameTask = prev.filter((s) => s.taskId === e.taskId);
           return {
             ...state,
-            liveSteps: {
-              ...state.liveSteps,
-              [e.agentId]: { taskId: e.taskId, caption: e.caption, screenshotUrl: e.screenshotUrl, at: Date.now() },
-            },
+            liveSteps: { ...state.liveSteps, [e.agentId]: step },
+            liveLogs: { ...state.liveLogs, [e.agentId]: [...sameTask, step].slice(-16) },
           };
+        }
         case "approval_created":
         case "approval_resolved":
           return { ...state, approvals: { ...state.approvals, [e.approval.id]: e.approval } };
@@ -107,6 +116,7 @@ const initial: State = {
   approvals: {},
   tasks: {},
   liveSteps: {},
+  liveLogs: {},
   selectedId: null,
 };
 

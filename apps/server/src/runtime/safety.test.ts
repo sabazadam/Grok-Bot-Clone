@@ -34,5 +34,6 @@ describe("safety rule engine", () => {
   it("never flags memory or completion", () => {
     expect(evaluateInvocation({ id: "1", tool: "update_memory", memoryKind: "fact", content: "rm -rf" }).needsApproval).toBe(false);
     expect(evaluateInvocation({ id: "2", tool: "task_complete", summary: "done" }).needsApproval).toBe(false);
+    expect(evaluateInvocation({ id: "3", tool: "send_message", text: "Need takeover." }).needsApproval).toBe(false);
   });
 });

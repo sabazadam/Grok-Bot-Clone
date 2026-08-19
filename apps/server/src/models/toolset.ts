@@ -43,10 +43,20 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
       required: ["description", "reason"],
     },
     {
-      name: "task_complete",
-      description: "Call when the task is fully finished. The summary is your reply to the requester — include the outcome and where any artifacts were saved.",
+      name: "send_message",
+      description:
+        "Post a message in this conversation. Use ONLY when the user needs to know something now: a blocker, a question only they can answer, a takeover request, or a milestone they asked to be told about. Do NOT narrate clicks, commands, screenshots, or routine sandbox work.",
       parameters: {
-        summary: { type: "string", description: "Final reply describing the outcome" },
+        text: { type: "string", description: "Concise, task-related message" },
+      },
+      required: ["text"],
+    },
+    {
+      name: "task_complete",
+      description:
+        "Call when the task is fully finished. The summary is your one reply to the requester — outcome and where artifacts live. If no reply is needed, use exactly ACK so nothing is posted.",
+      parameters: {
+        summary: { type: "string", description: "Final reply describing the outcome, or ACK if no reply is needed" },
       },
       required: ["summary"],
     },
@@ -55,7 +65,7 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
     tools.push({
       name: "send_message_to_agent",
       description:
-        "Send a direct message to another agent teammate (they have their own computer and will act on it and may reply later). Use only when collaboration genuinely helps or the user asked for it.",
+        "Send a direct message to another agent teammate. They work independently on their own computer and reply only if a result is needed. Use only when collaboration genuinely helps the current task or the user asked for it — not to broadcast sandbox status.",
       parameters: {
         toAgentName: { type: "string", description: "The teammate's exact name" },
         text: { type: "string", description: "Your message — include all context they need" },
@@ -79,6 +89,8 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
     }
     case "request_approval":
       return { id, tool: "request_approval", description: String(args.description ?? ""), reason: String(args.reason ?? "") };
+    case "send_message":
+      return { id, tool: "send_message", text: String(args.text ?? "") };
     case "task_complete":
       return { id, tool: "task_complete", summary: String(args.summary ?? "") };
     case "send_message_to_agent":

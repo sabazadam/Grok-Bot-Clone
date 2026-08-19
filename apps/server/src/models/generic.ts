@@ -23,8 +23,11 @@ You control the computer by replying with EXACTLY ONE JSON object per turn — n
 {"thought":"...","bash":{"command":"ls ~/workspace","timeoutSec":60}}
 {"thought":"...","update_memory":{"kind":"fact","content":"..."}}           // kind: preference|fact|summary
 {"thought":"...","request_approval":{"description":"...","reason":"..."}}
+{"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now
 {"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}
-{"done":true,"message":"your final reply to the requester"}
+{"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed
+
+Thoughts stay internal — they are not posted to chat. Stay silent while you work on the computer. Message only when necessary and related to the task.
 
 Coordinates are pixels on the screenshot you see. After every action you receive the result and a fresh screenshot. Think step by step in "thought". When the task is complete (or impossible), reply with the {"done":true,...} form.`;
 
@@ -152,6 +155,10 @@ export class GenericAdapter implements ModelAdapter {
     } else if (obj.request_approval && typeof obj.request_approval === "object") {
       const r = obj.request_approval as Record<string, unknown>;
       inv = { id, tool: "request_approval", description: String(r.description ?? ""), reason: String(r.reason ?? "") };
+    } else if (obj.send_message && typeof obj.send_message === "object") {
+      inv = { id, tool: "send_message", text: String((obj.send_message as Record<string, unknown>).text ?? "") };
+    } else if (typeof obj.send_message === "string") {
+      inv = { id, tool: "send_message", text: obj.send_message };
     } else if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
       const s = obj.send_message_to_agent as Record<string, unknown>;
       inv = { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };

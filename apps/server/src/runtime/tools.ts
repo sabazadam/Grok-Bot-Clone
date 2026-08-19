@@ -92,6 +92,11 @@ export async function executeInvocation(
       }
     }
 
+    case "send_message": {
+      // posted by the runner so it lands as a real chat message, not an activity pill
+      return { outcome: { id: inv.id, tool: inv.tool, output: "sent" } };
+    }
+
     case "send_message_to_agent": {
       if (!agent.collaborationEnabled) {
         return { outcome: { id: inv.id, tool: inv.tool, output: "collaboration is disabled for you", isError: true } };
@@ -124,7 +129,7 @@ export async function executeInvocation(
           id: inv.id,
           tool: inv.tool,
           output: delivered
-            ? `delivered to ${recipient.name} in their chat; they will act on their own computer and report back to you`
+            ? `delivered to ${recipient.name} in their chat; they will act on their own computer and reply only if a result is needed`
             : `NOT delivered — the agent-to-agent turn budget for this request is exhausted`,
           isError: !delivered,
         },

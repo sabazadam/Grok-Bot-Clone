@@ -5,20 +5,21 @@
  * back → repeat, with host-side safety gates, live activity events, cancellation,
  * and a step cap. Provider differences live in the model adapters.
  */
-import type { Agent, Conversation } from "@grokbot/shared";
+import type { Agent } from "@grokbot/shared";
 import * as store from "../store.js";
 import { broadcast } from "../bus.js";
 import * as service from "../agents/service.js";
 import { computerManager } from "../computer/manager.js";
 import { config } from "../config.js";
 import { createAdapter, describeInvocation, type AgentDecision, type ToolOutcome } from "../models/index.js";
-import { buildSystemPrompt, recentTranscript } from "./prompt.js";
+import { buildSystemPrompt, buildTaskPrompt } from "./prompt.js";
 import { evaluateInvocation, describeExactAction } from "./safety.js";
 import { requestApproval } from "./approvals.js";
 import { registerTask, unregisterTask } from "./cancel.js";
 import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
+import { handoffCaption, isSilentReply, shouldPostToolToChat } from "./report.js";
 
 export interface RunTaskOptions {
   agentId: string;
@@ -37,38 +38,6 @@ function postAgentText(agent: Agent, conversationId: string, text: string): void
     text: text.trim(),
   });
   broadcast({ type: "message", message: msg });
-}
-
-function postActivity(agent: Agent, conversationId: string, caption: string, screenshotUrl?: string): void {
-  const msg = store.addMessage({
-    conversationId,
-    sender: { kind: "agent", agentId: agent.id },
-    kind: "activity",
-    text: caption,
-    screenshotUrl,
-  });
-  broadcast({ type: "message", message: msg });
-}
-
-function buildTaskPrompt(agent: Agent, conversation: Conversation, opts: RunTaskOptions): string {
-  const parts: string[] = [];
-  const transcript = recentTranscript(conversation.id, agent.id);
-  if (transcript) {
-    parts.push(`Recent conversation:\n${transcript}\n`);
-  }
-  if (opts.triggeredBy.kind === "agent") {
-    const from = store.getAgent(opts.triggeredBy.agentId);
-    parts.push(
-      `New message from your teammate ${from?.name ?? "another agent"}${from?.roleTitle ? ` (${from.roleTitle})` : ""}:\n${opts.prompt}\n\nAct on it if action is needed. If it only needs a short answer, reply via task_complete. If it needs NO reply at all, call task_complete with exactly "ACK".`,
-    );
-  } else if (conversation.kind === "group") {
-    parts.push(
-      `New message from the user in the group chat "${conversation.title}":\n${opts.prompt}\n\nYou can hand off or delegate by mentioning a teammate with @Name in your final reply, or by using send_message_to_agent.`,
-    );
-  } else {
-    parts.push(`New message from the user:\n${opts.prompt}`);
-  }
-  return parts.join("\n");
 }
 
 export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
@@ -108,9 +77,8 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         break;
       }
 
-      if (decision.assistantText) {
-        postAgentText(agent, conversation.id, decision.assistantText);
-      }
+      // Model thoughts / "I'll click X" narration stay internal — never chat.
+      // Agents speak only via send_message, send_message_to_agent, or task_complete.
 
       const outcomes: ToolOutcome[] = [];
       for (const inv of decision.invocations) {
@@ -174,6 +142,16 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
           }
         }
 
+        // ── explicit mid-task message (only when the agent chose to speak) ──
+        if (inv.tool === "send_message") {
+          const text = inv.text.trim();
+          if (text && !isSilentReply(text)) {
+            postAgentText(agent, conversation.id, text);
+          }
+          outcomes.push({ id: inv.id, tool: inv.tool, output: text ? "sent" : "empty message ignored" });
+          continue;
+        }
+
         // ── completion ──
         if (inv.tool === "task_complete") {
           finalText = inv.summary;
@@ -193,9 +171,10 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         store.addTaskStep(task.id, stepIndex, caption, JSON.stringify(inv), screenshotUrl);
         store.updateTask(task.id, { stepCount: stepIndex });
         broadcast({ type: "task_step", taskId: task.id, agentId: agent.id, stepIndex, caption, screenshotUrl });
-        // keep the conversation's activity feed light: skip bare screenshots
-        if (!(inv.tool === "computer" && inv.action.type === "screenshot")) {
-          postActivity(agent, conversation.id, caption, screenshotUrl);
+        // Sandbox clicks/commands stay on the computer feed. Chat only gets
+        // real communication (a teammate handoff the user should see).
+        if (shouldPostToolToChat(inv) && inv.tool === "send_message_to_agent") {
+          postAgentText(agent, conversation.id, handoffCaption(inv.toAgentName, inv.text));
         }
       }
 
@@ -216,8 +195,8 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     unregisterTask(task.id);
   }
 
-  // ── deliver the final reply ──
-  const isAck = finalText.trim() === "ACK";
+  // ── deliver the final reply (ACK / empty = no chat message) ──
+  const isAck = isSilentReply(finalText);
   if (!failed && finalText && !isAck) {
     postAgentText(agent, conversation.id, finalText);
   }

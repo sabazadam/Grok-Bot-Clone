@@ -69,6 +69,8 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Run shell command:\n$ ${inv.command}`;
     case "computer":
       return `Computer action: ${JSON.stringify(inv.action)}`;
+    case "send_message":
+      return `Message the conversation: "${inv.text}"`;
     case "send_message_to_agent":
       return `Message @${inv.toAgentName}: "${inv.text}"`;
     case "request_approval":

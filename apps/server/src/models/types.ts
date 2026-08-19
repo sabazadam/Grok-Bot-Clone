@@ -4,6 +4,7 @@ import type { ComputerAction, MemoryKind, Resolution } from "@grokbot/shared";
 export type ToolInvocation =
   | { id: string; tool: "computer"; action: ComputerAction }
   | { id: string; tool: "bash"; command: string }
+  | { id: string; tool: "send_message"; text: string }
   | { id: string; tool: "send_message_to_agent"; toAgentName: string; text: string }
   | { id: string; tool: "update_memory"; memoryKind: MemoryKind; content: string }
   | { id: string; tool: "request_approval"; description: string; reason: string }
@@ -90,6 +91,8 @@ export function describeInvocation(inv: ToolInvocation): string {
       const cmd = inv.command.length > 64 ? inv.command.slice(0, 64) + "…" : inv.command;
       return `Ran: ${cmd}`;
     }
+    case "send_message":
+      return "Sent a message";
     case "send_message_to_agent":
       return `Messaged @${inv.toAgentName}`;
     case "update_memory":

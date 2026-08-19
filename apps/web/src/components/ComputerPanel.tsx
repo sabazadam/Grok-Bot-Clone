@@ -29,6 +29,7 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
   const active = state.agents.find((a) => a.id === activeId);
   const computer = active?.computer;
   const live = active ? state.liveSteps[active.id] : undefined;
+  const log = active ? (state.liveLogs[active.id] ?? []) : [];
 
   const vncUrl = useMemo(() => {
     if (!computer?.novncPort || computer.state !== "running") return null;
@@ -132,6 +133,19 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
           </div>
         )}
       </div>
+
+      {log.length > 0 && (
+        <div
+          className="max-h-28 overflow-y-auto px-3 py-2 text-[11px]"
+          style={{ borderTop: "1px solid var(--border)", color: "var(--muted)" }}
+        >
+          {log.map((step, i) => (
+            <div key={`${step.taskId}-${step.at}-${i}`} className="truncate py-0.5">
+              {step.caption}
+            </div>
+          ))}
+        </div>
+      )}
 
       <footer className="flex items-center gap-2 px-3 py-2" style={{ borderTop: "1px solid var(--border)" }}>
         <button disabled={busy || computer?.state !== "running"} onClick={() => void computerAction("restart")} className={ctlBtn} style={ctlStyle}>

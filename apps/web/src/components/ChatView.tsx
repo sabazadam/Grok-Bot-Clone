@@ -8,18 +8,10 @@ function Bubble({ message, agent }: { message: Message; agent?: Agent }) {
   const { state } = useStore();
   const [busy, setBusy] = useState(false);
 
+  // Legacy per-action activity pills are hidden — sandbox work belongs on
+  // Agent Computer + the live "working…" indicator, not the transcript.
   if (message.kind === "activity") {
-    return (
-      <div className="my-1 flex justify-center">
-        <span
-          className="max-w-[80%] truncate rounded-full px-3 py-1 text-[11px]"
-          style={{ background: "var(--pill)", color: "var(--pill-text)" }}
-        >
-          {agent ? `${agent.name} · ` : ""}
-          {message.text}
-        </span>
-      </div>
-    );
+    return null;
   }
 
   if (message.kind === "error") {

@@ -1,15 +1,23 @@
 /** Assembles an agent's system prompt: identity, role, environment, memory, teammates, policies. */
-import type { Agent } from "@grokbot/shared";
+import type { Agent, Conversation } from "@grokbot/shared";
 import { parseResolution } from "@grokbot/shared";
 import { config } from "../config.js";
 import * as store from "../store.js";
+
+export interface TaskPromptOptions {
+  agentId: string;
+  conversationId: string;
+  prompt: string;
+  rootMessageId: string;
+  triggeredBy: { kind: "user" } | { kind: "agent"; agentId: string };
+}
 
 export function buildSystemPrompt(agent: Agent): string {
   const { width, height } = parseResolution(config.computerResolution);
   const sections: string[] = [];
 
   sections.push(
-    `You are ${agent.name}${agent.roleTitle ? `, the ${agent.roleTitle}` : ""} — a persistent AI teammate with YOUR OWN dedicated computer. You do real work end-to-end on it and report back like a capable colleague.`,
+    `You are ${agent.name}${agent.roleTitle ? `, the ${agent.roleTitle}` : ""} — a persistent AI teammate with YOUR OWN dedicated computer. You finish jobs end-to-end on that sandbox and only come back when something needs the user: a finished result, a blocker only they can resolve, or an approval.`,
   );
 
   sections.push(
@@ -26,7 +34,16 @@ export function buildSystemPrompt(agent: Agent): string {
 - Prefer the bash tool for file operations, downloads, git, and scripts — it is faster and more reliable than the GUI. Use the GUI (mouse/keyboard) for websites and graphical apps.
 - If a page hasn't loaded yet, wait briefly rather than clicking blindly.
 - If something is truly impossible (login walls you can't pass, missing credentials), stop and explain rather than guessing. The user can take over your screen to enter passwords or 2FA codes — ask for that when needed.
-- Finish by calling task_complete with a concise summary (what you did, where results live).`,
+
+## When to message (report only when necessary)
+Your computer is a sandbox. Clicks, typing, browsing, and shell commands are NOT chat messages — the user can watch them in Agent Computer. Stay silent while you work.
+Do not narrate routine actions, do not send a status update after every step, and do not message about work that is unrelated to the current task.
+Message only when it is necessary AND related to the task:
+- send_message — a blocker, a question only the user can answer, a takeover request (password / 2FA / CAPTCHA), or a milestone they explicitly asked to be told about.
+- request_approval — consequential external actions (send, purchase, delete, publish, submit).
+- send_message_to_agent — a real handoff that needs another specialist. Not for broadcasting status.
+- task_complete — the finished result for the requester. If no reply is needed, call it with exactly ACK so nothing is posted.
+Never use send_message (or a teammate DM) to say that you clicked, typed, ran a command, or took a screenshot.`,
   );
 
   if (agent.instructions.trim()) {
@@ -47,9 +64,9 @@ export function buildSystemPrompt(agent: Agent): string {
     if (teammates.length > 0) {
       sections.push(
         `## Teammates
-You can message these agents with send_message_to_agent (each has their own computer; they act independently and may reply later):
+You can message these agents with send_message_to_agent (each has their own computer; they act independently and reply only if a result is needed):
 ${teammates.join("\n")}
-Message a teammate only when it genuinely helps (their specialty, parallel work) or when asked. Include full context — they can't see your conversation.`,
+Message a teammate only when it genuinely helps the current task (their specialty, parallel work) or when asked. Include full context — they can't see your conversation. Do not ping them with progress of your own sandbox work.`,
       );
     }
   }
@@ -81,4 +98,28 @@ export function recentTranscript(conversationId: string, agentId: string, limit 
     return `${who}: ${m.text}`;
   });
   return lines.join("\n");
+}
+
+/** Per-turn task prompt. Instructs the model to stay silent on sandbox work. */
+export function buildTaskPrompt(agent: Agent, conversation: Conversation, opts: TaskPromptOptions): string {
+  const parts: string[] = [];
+  const transcript = recentTranscript(conversation.id, agent.id);
+  if (transcript) {
+    parts.push(`Recent conversation:\n${transcript}\n`);
+  }
+  if (opts.triggeredBy.kind === "agent") {
+    const from = store.getAgent(opts.triggeredBy.agentId);
+    parts.push(
+      `New message from your teammate ${from?.name ?? "another agent"}${from?.roleTitle ? ` (${from.roleTitle})` : ""}:\n${opts.prompt}\n\nThis is a sandbox handoff. Do the work on your computer and stay silent about routine actions. If they need a result to continue, send it with send_message_to_agent. If no reply is needed, call task_complete with exactly "ACK" (nothing will be posted).`,
+    );
+  } else if (conversation.kind === "group") {
+    parts.push(
+      `New message from the user in the group chat "${conversation.title}":\n${opts.prompt}\n\nWork on this. Stay silent until you have a necessary, task-related update or a finished result. You can hand off by mentioning a teammate with @Name in your final reply, or by using send_message_to_agent.`,
+    );
+  } else {
+    parts.push(
+      `New message from the user:\n${opts.prompt}\n\nWork on this. Stay silent until you have a necessary, task-related update or a finished result.`,
+    );
+  }
+  return parts.join("\n");
 }

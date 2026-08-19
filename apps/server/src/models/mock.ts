@@ -9,6 +9,7 @@
  *   save file <path> containing: <text>
  *   ask approval to <something>
  *   tell @<AgentName>: <text>
+ *   say: <text>
  *   remember: <text>
  *
  * Anything else results in: screenshot → short final reply.
@@ -46,6 +47,8 @@ export class MockAdapter implements ModelAdapter {
       let m: RegExpMatchArray | null;
       if ((m = line.match(/tell @(\S+):\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
+      } else if ((m = line.match(/^say:\s*(.+)$/i))) {
+        this.queue.push({ id: this.id(), tool: "send_message", text: m[1]! });
       } else if ((m = line.match(/open the browser to (\S+)/i))) {
         this.queue.push({
           id: this.id(),

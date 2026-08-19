@@ -241,4 +241,14 @@ describe("GenericAdapter", () => {
     if (d.kind !== "act") throw new Error();
     expect(d.invocations[0]).toMatchObject({ tool: "bash", command: "ls ~/workspace" });
   });
+
+  it("parses send_message as an explicit chat update", async () => {
+    const { fn } = mockFetch([
+      { choices: [{ message: { content: '{"thought":"blocked","send_message":{"text":"Need you to take over for 2FA."}}' } }] },
+    ]);
+    const a = new GenericAdapter(init(fn));
+    const d = await a.start("task", SCREENSHOT);
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({ tool: "send_message", text: "Need you to take over for 2FA." });
+  });
 });
