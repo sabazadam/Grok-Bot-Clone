@@ -38,18 +38,24 @@ async function main() {
   await registerRoutes(app);
   startScheduler();
 
-  // Idle computer auto-stop sweep
-  if (config.computerIdleStopMinutes > 0) {
+  // Idle computer auto-stop sweep. Spawned specialists are permanent (history/files persist) but
+  // their computer is reclaimed on a shorter idle window to free RAM.
+  if (config.computerIdleStopMinutes > 0 || config.specialistIdleStopMinutes > 0) {
     setInterval(async () => {
       const active = new Set(
         store
           .listAgents()
-          .filter((a) => a.status === "working" || a.status === "waiting_approval")
+          .filter((a) => a.status === "working" || a.status === "waiting_approval" || a.status === "starting")
           .map((a) => a.id),
       );
-      const stopped = await computerManager.stopIdle(active);
+      const stopped = await computerManager.stopIdle(active, (agentId) => {
+        const a = store.getAgent(agentId);
+        return a?.agentKind === "specialist" ? config.specialistIdleStopMinutes : config.computerIdleStopMinutes;
+      });
       for (const agentId of stopped) {
         store.setAgentStatus(agentId, "off");
+        const a = store.getAgent(agentId);
+        if (a) broadcast({ type: "agent_updated", agent: await service.agentWithComputer(a) });
       }
     }, 60_000).unref();
   }

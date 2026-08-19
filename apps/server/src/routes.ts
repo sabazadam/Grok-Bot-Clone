@@ -530,6 +530,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return store.searchMessages(q);
   });
 
+  // ── delegations (hierarchical multi-agent, read-only for the UI) ──────
+  app.get("/api/delegations", async (req) => {
+    const { agentId, rootMessageId } = req.query as { agentId?: string; rootMessageId?: string };
+    if (rootMessageId) return store.listDelegationsForRoot(rootMessageId);
+    if (agentId) return store.listDelegationsByParent(agentId);
+    // default: everything (small, single-user app)
+    const agents = store.listAgents();
+    return agents.flatMap((a) => store.listDelegationsByParent(a.id));
+  });
+
   app.get("/api/plugins", async () => store.listPlugins());
 
   app.post("/api/plugins", async (req, reply) => {

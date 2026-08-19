@@ -47,6 +47,39 @@ describe("MockAdapter reporting", () => {
     expect(String((d1.invocations[0] as { command?: string }).command)).toMatch(/google\.com\/search/);
   });
 
+  it("parses 'delegate to' into a delegate_task for an existing teammate", async () => {
+    const a = new MockAdapter(init);
+    const d1 = await a.start("New message from the user:\ndelegate to Researcher: dig into the competitors", "");
+    expect(d1.kind).toBe("act");
+    if (d1.kind !== "act") throw new Error();
+    expect(d1.invocations[0]).toMatchObject({
+      tool: "delegate_task",
+      tasks: [{ agentName: "Researcher", goal: "dig into the competitors" }],
+    });
+  });
+
+  it("parses 'spawn X as Role' into a delegate_task that spawns a specialist", async () => {
+    const a = new MockAdapter(init);
+    const d1 = await a.start("New message from the user:\nspawn Scout as Researcher: find primary sources", "");
+    if (d1.kind !== "act") throw new Error();
+    expect(d1.invocations[0]).toMatchObject({
+      tool: "delegate_task",
+      tasks: [{ spawn: { name: "Scout", roleTitle: "Researcher" }, goal: "find primary sources" }],
+    });
+  });
+
+  it("parses 'delegate parallel' into a concurrent batch", async () => {
+    const a = new MockAdapter(init);
+    const d1 = await a.start("New message from the user:\ndelegate parallel: Researcher=dig X; Coder=build Y", "");
+    if (d1.kind !== "act") throw new Error();
+    const inv = d1.invocations[0]!;
+    if (inv.tool !== "delegate_task") throw new Error("expected delegate_task");
+    expect(inv.tasks).toHaveLength(2);
+    expect(inv.tasks[0]).toMatchObject({ agentName: "Researcher", goal: "dig X" });
+    expect(inv.tasks[1]).toMatchObject({ agentName: "Coder", goal: "build Y" });
+    expect(inv.concurrency).toBe(2);
+  });
+
   it("ACKs a teammate FYI that needs no action — no chat report", async () => {
     const a = new MockAdapter(init);
     const d = await a.start(

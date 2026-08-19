@@ -130,6 +130,24 @@ CREATE TABLE IF NOT EXISTS plugins (
   url TEXT,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS delegations (
+  id TEXT PRIMARY KEY,
+  root_message_id TEXT,
+  parent_agent_id TEXT NOT NULL,
+  child_agent_id TEXT NOT NULL,
+  conversation_id TEXT,
+  child_task_id TEXT,
+  goal TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'leaf',
+  depth INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'running',
+  result_summary TEXT,
+  step_count INTEGER,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_deleg_parent ON delegations(parent_agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_deleg_root ON delegations(root_message_id);
 `;
 
 let db: Database.Database | null = null;

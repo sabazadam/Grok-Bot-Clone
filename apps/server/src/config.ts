@@ -63,6 +63,17 @@ export const config = {
   /** Max agent-to-agent turns triggered by one user message (loop prevention) */
   maxAgentTurns: Number(env("MAX_AGENT_TURNS", "8")),
 
+  /** Delegation (hierarchical multi-agent) */
+  // How deep the delegation tree may go. 1 = flat (Lead → specialists). 2 = nested orchestrators.
+  maxSpawnDepth: Number(env("MAX_SPAWN_DEPTH", "1")),
+  // How many delegated sub-tasks run at once (keep under MAX_RUNNING_COMPUTERS).
+  delegateConcurrency: Number(env("DELEGATE_CONCURRENCY", "2")),
+  // Default per-sub-task timeout (seconds).
+  delegateDefaultTimeoutSec: Number(env("DELEGATE_TIMEOUT_SEC", "300")),
+  // Spawned specialists are permanent; their computer is stopped after this many idle minutes
+  // (history + files persist). Shorter than the global idle stop below.
+  specialistIdleStopMinutes: Number(env("SPECIALIST_IDLE_STOP_MINUTES", "10")),
+
   agentDesktopImage: env("AGENT_DESKTOP_IMAGE", "grokbot/agent-desktop:latest"),
 
   /** Built web UI directory; when present it's served at "/" so the whole app runs on one port. */

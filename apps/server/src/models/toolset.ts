@@ -116,6 +116,41 @@ export function customTools(allowed: Set<string>): NeutralTool[] {
       },
       required: ["summary"],
     },
+    {
+      name: "delegate_task",
+      description:
+        "Delegate one or more sub-tasks to specialist teammates and WAIT for their structured results (Team Lead / orchestrator). Each sub-agent runs in its own thread with isolated context (only the goal + context you provide) on its own computer; only a distilled result returns to you, keeping your context clean. Use `agentName` to hand a task to an existing teammate, or `spawn` to create a new permanent specialist with a restricted tool policy. Run several in parallel with `concurrency`.",
+      parameters: {
+        tasks: {
+          type: "array",
+          description: "The sub-tasks to delegate (run in parallel up to `concurrency`).",
+          items: {
+            type: "object",
+            properties: {
+              agentName: { type: "string", description: "Existing teammate to delegate to (preferred when one fits)" },
+              spawn: {
+                type: "object",
+                description: "Spawn a new permanent specialist instead of using an existing teammate",
+                properties: {
+                  name: { type: "string" },
+                  roleTitle: { type: "string" },
+                  instructions: { type: "string" },
+                  toolPolicy: { type: "string", enum: ["full", "research", "coding", "browser_only", "review_only"] },
+                },
+              },
+              goal: { type: "string", description: "The concrete objective for this sub-agent" },
+              context: { type: "string", description: "Background the sub-agent needs (it can't see your chat)" },
+              role: { type: "string", enum: ["leaf", "orchestrator"], description: "leaf (default) cannot sub-delegate" },
+              timeoutSec: { type: "number", description: "Max seconds for this sub-task (default 300)" },
+              maxSteps: { type: "number", description: "Max computer-use steps for this sub-task" },
+            },
+            required: ["goal"],
+          },
+        },
+        concurrency: { type: "number", description: "How many sub-tasks to run at once (default 2)" },
+      },
+      required: ["tasks"],
+    },
   ];
   tools.push({
     name: "send_message_to_agent",
@@ -185,7 +220,39 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
       };
     case "send_message_to_agent":
       return { id, tool: "send_message_to_agent", toAgentName: String(args.toAgentName ?? ""), text: String(args.text ?? "") };
+    case "delegate_task":
+      return { id, tool: "delegate_task", ...parseDelegateArgs(args) };
     default:
       return undefined;
   }
+}
+
+/** Normalize delegate_task arguments (tolerates a single task object or an array). */
+export function parseDelegateArgs(args: Record<string, unknown>): { tasks: import("./types.js").DelegateTaskSpec[]; concurrency?: number } {
+  const raw = Array.isArray(args.tasks) ? args.tasks : args.task ? [args.task] : [];
+  const tasks = (raw as Record<string, unknown>[])
+    .map((t) => {
+      if (!t || typeof t !== "object") return undefined;
+      const spawn = t.spawn && typeof t.spawn === "object" ? (t.spawn as Record<string, unknown>) : undefined;
+      const spec: import("./types.js").DelegateTaskSpec = {
+        agentName: t.agentName ? String(t.agentName) : undefined,
+        spawn: spawn
+          ? {
+              name: String(spawn.name ?? ""),
+              roleTitle: spawn.roleTitle ? String(spawn.roleTitle) : undefined,
+              instructions: spawn.instructions ? String(spawn.instructions) : undefined,
+              toolPolicy: spawn.toolPolicy ? (String(spawn.toolPolicy) as import("@grokbot/shared").ToolPolicyName) : undefined,
+            }
+          : undefined,
+        goal: String(t.goal ?? ""),
+        context: t.context ? String(t.context) : undefined,
+        role: t.role === "orchestrator" ? "orchestrator" : t.role === "leaf" ? "leaf" : undefined,
+        allowedTools: Array.isArray(t.allowedTools) ? (t.allowedTools as unknown[]).map(String) : undefined,
+        timeoutSec: t.timeoutSec !== undefined ? Number(t.timeoutSec) : undefined,
+        maxSteps: t.maxSteps !== undefined ? Number(t.maxSteps) : undefined,
+      };
+      return spec;
+    })
+    .filter((s): s is import("./types.js").DelegateTaskSpec => !!s && !!s.goal && (!!s.agentName || !!s.spawn?.name));
+  return { tasks, concurrency: args.concurrency !== undefined ? Number(args.concurrency) : undefined };
 }

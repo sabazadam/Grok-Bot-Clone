@@ -52,9 +52,15 @@ Never use send_message (or a teammate DM) to say that you clicked, typed, ran a 
   );
 
   if (agent.isTeamLead) {
+    const canDelegate = resolveAllowedTools(agent).has("delegate_task");
     sections.push(
       `## Team lead
-You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.`,
+You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.${
+        canDelegate
+          ? `
+For complex requests, prefer **delegate_task**: hand each sub-goal to a specialist (reuse an existing teammate by name when one fits; otherwise spawn a new one). Give each only the goal + the context it needs — it works in its own thread and returns a concise structured result, so your context stays clean. Run independent sub-tasks in parallel with \`concurrency\`. Reuse specialists across requests instead of spawning duplicates.`
+          : ""
+      }`,
     );
   }
 

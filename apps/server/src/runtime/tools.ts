@@ -19,6 +19,8 @@ export interface ExecContext {
   conversationId: string;
   rootMessageId: string;
   signal?: AbortSignal;
+  /** Delegation depth of the CURRENT task (0 for user/normal tasks). */
+  depth?: number;
 }
 
 async function execComputerAction(
@@ -257,6 +259,28 @@ export async function executeInvocation(
       } catch (err) {
         return { outcome: { id: inv.id, tool: inv.tool, output: (err as Error).message, isError: true } };
       }
+    }
+
+    case "delegate_task": {
+      const { runDelegation } = await import("./delegate.js");
+      const { output, results, firstThreadId } = await runDelegation(
+        {
+          parentAgent: agent,
+          rootMessageId: ctx.rootMessageId,
+          parentConversationId: ctx.conversationId,
+          depth: ctx.depth ?? 0,
+        },
+        inv,
+      );
+      return {
+        outcome: {
+          id: inv.id,
+          tool: inv.tool,
+          output,
+          isError: results.length > 0 && results.every((r) => r.status === "failed" || r.status === "skipped_budget"),
+          relatedConversationId: firstThreadId,
+        },
+      };
     }
 
     case "request_approval":

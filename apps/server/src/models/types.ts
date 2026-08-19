@@ -1,5 +1,19 @@
 /** Provider-agnostic model adapter contract. */
-import type { ComputerAction, MemoryKind, Resolution } from "@grokbot/shared";
+import type { ComputerAction, MemoryKind, Resolution, ToolPolicyName } from "@grokbot/shared";
+
+/** One sub-task in a delegate_task call. */
+export interface DelegateTaskSpec {
+  /** delegate to an existing teammate by name… */
+  agentName?: string;
+  /** …or spawn a new permanent specialist */
+  spawn?: { name: string; roleTitle?: string; instructions?: string; toolPolicy?: ToolPolicyName };
+  goal: string;
+  context?: string;
+  role?: "leaf" | "orchestrator";
+  allowedTools?: string[];
+  timeoutSec?: number;
+  maxSteps?: number;
+}
 
 export type ToolInvocation =
   | { id: string; tool: "computer"; action: ComputerAction }
@@ -12,7 +26,8 @@ export type ToolInvocation =
   | { id: string; tool: "create_agent"; name: string; roleTitle: string; instructions: string; isTeamLead?: boolean }
   | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes?: number; schedule?: string; skillName?: string }
   | { id: string; tool: "task_complete"; summary: string }
-  | { id: string; tool: "call_plugin"; pluginId: string; toolName: string; arguments: Record<string, unknown> };
+  | { id: string; tool: "call_plugin"; pluginId: string; toolName: string; arguments: Record<string, unknown> }
+  | { id: string; tool: "delegate_task"; tasks: DelegateTaskSpec[]; concurrency?: number };
 
 export interface ToolOutcome {
   id: string;
@@ -117,5 +132,12 @@ export function describeInvocation(inv: ToolInvocation): string {
       return "Finished the task";
     case "call_plugin":
       return `Called plugin ${inv.pluginId}.${inv.toolName}`;
+    case "delegate_task": {
+      const names = inv.tasks
+        .map((t) => t.agentName || t.spawn?.name)
+        .filter(Boolean)
+        .join(", ");
+      return `Delegated ${inv.tasks.length} task(s)${names ? ` to ${names}` : ""}`;
+    }
   }
 }

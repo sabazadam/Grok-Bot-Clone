@@ -351,13 +351,18 @@ export class ComputerManager {
     }
   }
 
-  /** Stop computers idle for longer than the configured threshold. Returns stopped agent ids. */
-  async stopIdle(activeAgentIds: Set<string>): Promise<string[]> {
-    if (config.computerIdleStopMinutes <= 0) return [];
-    const cutoff = Date.now() - config.computerIdleStopMinutes * 60_000;
+  /**
+   * Stop computers idle longer than their threshold. Returns stopped agent ids.
+   * `minutesFor` lets the caller pick a per-agent idle window (e.g. spawned specialists get a
+   * shorter window than standard agents); a value <= 0 means "never stop this agent".
+   */
+  async stopIdle(activeAgentIds: Set<string>, minutesFor?: (agentId: string) => number): Promise<string[]> {
+    const now = Date.now();
     const stopped: string[] = [];
     for (const [agentId, ts] of this.lastUsed) {
-      if (ts < cutoff && !activeAgentIds.has(agentId)) {
+      const minutes = minutesFor ? minutesFor(agentId) : config.computerIdleStopMinutes;
+      if (minutes <= 0) continue;
+      if (ts < now - minutes * 60_000 && !activeAgentIds.has(agentId)) {
         try {
           await this.stop(agentId);
           this.lastUsed.delete(agentId);

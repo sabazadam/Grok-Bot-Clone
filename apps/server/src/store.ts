@@ -7,6 +7,7 @@ import type {
   ApprovalStatus,
   Conversation,
   ConversationKind,
+  Delegation,
   MemoryEntry,
   MemoryKind,
   Message,
@@ -962,4 +963,101 @@ export function updatePlugin(id: string, patch: Partial<Pick<Plugin, "name" | "e
 
 export function deletePlugin(id: string): void {
   getDb().prepare(`DELETE FROM plugins WHERE id=?`).run(id);
+}
+
+// ── delegations (hierarchical multi-agent) ────────────────────────────────
+
+function rowToDelegation(r: any): Delegation {
+  return {
+    id: r.id,
+    rootMessageId: r.root_message_id ?? undefined,
+    parentAgentId: r.parent_agent_id,
+    childAgentId: r.child_agent_id,
+    conversationId: r.conversation_id ?? undefined,
+    childTaskId: r.child_task_id ?? undefined,
+    goal: r.goal,
+    role: (r.role as Delegation["role"]) || "leaf",
+    depth: r.depth ?? 1,
+    status: (r.status as Delegation["status"]) || "running",
+    resultSummary: r.result_summary ?? undefined,
+    stepCount: r.step_count ?? undefined,
+    createdAt: r.created_at,
+    finishedAt: r.finished_at ?? undefined,
+  };
+}
+
+export function createDelegation(input: {
+  rootMessageId?: string;
+  parentAgentId: string;
+  childAgentId: string;
+  conversationId?: string;
+  goal: string;
+  role: Delegation["role"];
+  depth: number;
+}): Delegation {
+  const id = nanoid(10);
+  getDb()
+    .prepare(
+      `INSERT INTO delegations (id, root_message_id, parent_agent_id, child_agent_id, conversation_id, goal, role, depth, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?)`,
+    )
+    .run(
+      id,
+      input.rootMessageId ?? null,
+      input.parentAgentId,
+      input.childAgentId,
+      input.conversationId ?? null,
+      input.goal,
+      input.role,
+      input.depth,
+      Date.now(),
+    );
+  return getDelegation(id)!;
+}
+
+export function getDelegation(id: string): Delegation | undefined {
+  const r = getDb().prepare(`SELECT * FROM delegations WHERE id=?`).get(id);
+  return r ? rowToDelegation(r) : undefined;
+}
+
+export function updateDelegation(
+  id: string,
+  patch: Partial<Pick<Delegation, "childTaskId" | "status" | "resultSummary" | "stepCount" | "finishedAt">>,
+): Delegation | undefined {
+  const cur = getDelegation(id);
+  if (!cur) return undefined;
+  getDb()
+    .prepare(
+      `UPDATE delegations SET child_task_id=?, status=?, result_summary=?, step_count=?, finished_at=? WHERE id=?`,
+    )
+    .run(
+      patch.childTaskId ?? cur.childTaskId ?? null,
+      patch.status ?? cur.status,
+      patch.resultSummary ?? cur.resultSummary ?? null,
+      patch.stepCount ?? cur.stepCount ?? null,
+      patch.finishedAt ?? cur.finishedAt ?? null,
+      id,
+    );
+  return getDelegation(id);
+}
+
+export function listDelegationsByParent(parentAgentId: string): Delegation[] {
+  return getDb()
+    .prepare(`SELECT * FROM delegations WHERE parent_agent_id=? ORDER BY created_at ASC`)
+    .all(parentAgentId)
+    .map(rowToDelegation);
+}
+
+export function listDelegationsForRoot(rootMessageId: string): Delegation[] {
+  return getDb()
+    .prepare(`SELECT * FROM delegations WHERE root_message_id=? ORDER BY created_at ASC`)
+    .all(rootMessageId)
+    .map(rowToDelegation);
+}
+
+export function listActiveDelegationsForChild(childAgentId: string): Delegation[] {
+  return getDb()
+    .prepare(`SELECT * FROM delegations WHERE child_agent_id=? AND status='running' ORDER BY created_at ASC`)
+    .all(childAgentId)
+    .map(rowToDelegation);
 }

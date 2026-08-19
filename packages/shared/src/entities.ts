@@ -1,6 +1,46 @@
 /** Persistent domain entities shared between server and web UI. */
 import type { RoutineSchedule } from "./schedule.js";
 
+/** Status of a delegated sub-task. */
+export type DelegationStatus = "running" | "done" | "failed" | "timeout" | "skipped_budget";
+
+/** The role a delegated sub-agent plays for the task. Leaf agents cannot sub-delegate. */
+export type DelegationRole = "leaf" | "orchestrator";
+
+/**
+ * A unit of hierarchical delegation: a parent (Team Lead / orchestrator) hands a goal to a child
+ * sub-agent, which runs in its own thread with isolated context and returns a structured result.
+ * Persisted so the UI can render the "Leader → Research Agent → Coding Agent" tree.
+ */
+export interface Delegation {
+  id: string;
+  /** the user message that ultimately triggered this chain (turn-budget key) */
+  rootMessageId?: string;
+  parentAgentId: string;
+  childAgentId: string;
+  /** the agent_dm thread the handoff lives in */
+  conversationId?: string;
+  childTaskId?: string;
+  goal: string;
+  role: DelegationRole;
+  depth: number;
+  status: DelegationStatus;
+  resultSummary?: string;
+  stepCount?: number;
+  createdAt: number;
+  finishedAt?: number;
+}
+
+/** Structured result handed back to the parent for a single delegated task. */
+export interface DelegateResult {
+  delegationId: string;
+  childAgentId: string;
+  childAgentName: string;
+  status: DelegationStatus;
+  summary: string;
+  steps: number;
+}
+
 export type Provider = "anthropic" | "openai" | "google" | "generic";
 
 export const PROVIDER_LABELS: Record<Provider, string> = {

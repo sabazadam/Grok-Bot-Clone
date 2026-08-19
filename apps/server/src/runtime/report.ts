@@ -40,6 +40,7 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
     case "create_agent":
     case "create_routine":
     case "save_skill":
+    case "delegate_task":
       return true;
     case "computer":
     case "bash":
@@ -67,6 +68,13 @@ export function communicationCaption(inv: ToolInvocation): string | undefined {
       return `Created teammate @${inv.name}${inv.roleTitle ? ` (${inv.roleTitle})` : ""}.`;
     case "create_routine":
       return `Scheduled “${inv.name}”${inv.schedule ? ` (${inv.schedule})` : ""}.`;
+    case "delegate_task": {
+      const names = inv.tasks
+        .map((t) => t.agentName || t.spawn?.name)
+        .filter(Boolean)
+        .join(", ");
+      return `Delegated to ${names || `${inv.tasks.length} specialist(s)`}`;
+    }
     default:
       return undefined;
   }

@@ -87,5 +87,7 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Finish task: ${inv.summary}`;
     case "call_plugin":
       return `Call plugin ${inv.pluginId}.${inv.toolName}`;
+    case "delegate_task":
+      return `Delegate ${inv.tasks.length} task(s) to ${inv.tasks.map((t) => t.agentName || t.spawn?.name).filter(Boolean).join(", ") || "specialists"}`;
   }
 }

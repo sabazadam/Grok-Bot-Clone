@@ -6,6 +6,7 @@
 import type { ComputerAction } from "@grokbot/shared";
 import type { AdapterInit, AgentDecision, ModelAdapter, ToolOutcome } from "./types.js";
 import type { ToolInvocation } from "./types.js";
+import { parseDelegateArgs } from "./toolset.js";
 
 type Msg = { role: "system" | "user" | "assistant"; content: unknown };
 
@@ -287,6 +288,8 @@ export class GenericAdapter implements ModelAdapter {
     } else if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
       const s = obj.send_message_to_agent as Record<string, unknown>;
       inv = { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };
+    } else if (obj.delegate_task && typeof obj.delegate_task === "object") {
+      inv = { id, tool: "delegate_task", ...parseDelegateArgs(obj.delegate_task as Record<string, unknown>) };
     }
 
     if (!inv) {
