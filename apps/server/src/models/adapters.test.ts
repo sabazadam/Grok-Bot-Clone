@@ -220,6 +220,19 @@ describe("GenericAdapter", () => {
     expect(d2).toEqual({ kind: "final", text: "finished the job" });
   });
 
+  it("nudges the model after unrecognized JSON actions, then gives up", async () => {
+    const { fn, calls } = mockFetch([
+      { choices: [{ message: { content: '{"thought":"hmm","foo":1}' } }] },
+      { choices: [{ message: { content: '{"thought":"still lost","bar":true}' } }] },
+      { choices: [{ message: { content: '{"thought":"nope","unknown":{}}' } }] },
+      { choices: [{ message: { content: '{"bash":{"command":"should not run"}}' } }] },
+    ]);
+    const a = new GenericAdapter(init(fn));
+    const d = await a.start("task", SCREENSHOT);
+    expect(d).toEqual({ kind: "final", text: "nope" });
+    expect(calls.length).toBe(3);
+  });
+
   it("nudges the model after invalid JSON, then gives up gracefully", async () => {
     const { fn, calls } = mockFetch([
       { choices: [{ message: { content: "I think I should click somewhere" } }] },

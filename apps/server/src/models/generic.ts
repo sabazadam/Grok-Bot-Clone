@@ -194,19 +194,14 @@ export class GenericAdapter implements ModelAdapter {
 
     const obj = extractJson(content);
     if (!obj) {
-      this.parseFailures += 1;
-      if (this.parseFailures >= 3) {
-        return { kind: "final", text: content.trim() || "(the model did not produce a usable action)" };
-      }
-      this.messages.push({
-        role: "user",
-        content: 'Your reply was not a single valid JSON object. Reply with EXACTLY one JSON object per the protocol, e.g. {"done":true,"message":"..."}.',
-      });
-      return this.call();
+      return this.retryOrGiveUp(
+        content.trim() || "(the model did not produce a usable action)",
+        'Your reply was not a single valid JSON object. Reply with EXACTLY one JSON object per the protocol, e.g. {"done":true,"message":"..."}.',
+      );
     }
-    this.parseFailures = 0;
 
     if (obj.done === true || typeof obj.message === "string") {
+      this.parseFailures = 0;
       return { kind: "final", text: String(obj.message ?? "Done.") };
     }
 
@@ -268,13 +263,23 @@ export class GenericAdapter implements ModelAdapter {
     }
 
     if (!inv) {
-      this.messages.push({
-        role: "user",
-        content: `Unrecognized action ${JSON.stringify(Object.keys(obj))}. Use the documented protocol.`,
-      });
-      return this.call();
+      return this.retryOrGiveUp(
+        thought || "(the model did not produce a usable action)",
+        `Unrecognized action ${JSON.stringify(Object.keys(obj))}. Use the documented protocol.`,
+      );
     }
+    this.parseFailures = 0;
     return { kind: "act", invocations: [inv], assistantText: thought };
+  }
+
+  /** Valid JSON that isn't an action used to recurse forever and burn API credits. */
+  private retryOrGiveUp(giveUpText: string, nudge: string): Promise<AgentDecision> | AgentDecision {
+    this.parseFailures += 1;
+    if (this.parseFailures >= 3) {
+      return { kind: "final", text: giveUpText };
+    }
+    this.messages.push({ role: "user", content: nudge });
+    return this.call();
   }
 
   async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
