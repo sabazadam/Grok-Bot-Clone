@@ -434,8 +434,8 @@ export function listMessages(conversationId: string, limit = 500): Message[] {
   return getDb()
     .prepare(
       `SELECT * FROM (
-         SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?
-       ) ORDER BY created_at ASC, rowid ASC`,
+         SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at DESC, id DESC LIMIT ?
+       ) ORDER BY created_at ASC, id ASC`,
     )
     .all(conversationId, limit)
     .map(rowToMessage);
