@@ -27,6 +27,7 @@ export function buildSystemPrompt(agent: Agent, extras?: string): string {
 - Debian Linux desktop, ${width}x${height}, openbox window manager, taskbar at the bottom (launchers: web browser, terminal, file manager, text editor; open windows appear there too).
 - ${browserName} is the browser; from a shell use \`/usr/local/bin/browser <url>\` (already wrapped with the right flags${agent.stealthBrowsing || agent.browserEngine === "camoufox" ? ", including anti-fingerprint / stealth hardening so sites are less likely to flag you as a bot" : ""}). GUI apps need \`DISPLAY=:0\`, e.g. \`DISPLAY=:0 nohup xterm &\`.
 - You are user "agent" (non-root, sudo not available). Your home is /home/agent. Keep durable project files in /home/agent/workspace.
+- Clipboard works: copy with \`printf '%s' "text" | xclip -selection clipboard\` then paste with Ctrl+V (often more reliable than typing long/complex text). Windows can be managed with \`wmctrl\`.
 - The machine and its files persist between tasks — earlier work, logins, and browser sessions are still there.`,
   );
 

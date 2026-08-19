@@ -1,5 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import { pickEvictionVictim, ComputerManager } from "./manager.js";
+import type { ComputerBackend } from "./backend.js";
+
+describe("ComputerBackend interface", () => {
+  it("is satisfied by the Docker-backed ComputerManager", () => {
+    // Compile-time conformance is enforced by `implements ComputerBackend`; assert at runtime too so
+    // a future host backend can be swapped in behind the same seam.
+    const backend: ComputerBackend = new ComputerManager();
+    for (const m of ["ensureRunning", "status", "screenshot", "act", "exec", "stop", "destroy", "syncBrowserConfig", "stopIdle"]) {
+      expect(typeof (backend as unknown as Record<string, unknown>)[m]).toBe("function");
+    }
+  });
+});
 
 describe("syncBrowserConfig", () => {
   it("writes STEALTH/ENGINE/CAMOU_CONFIG into the in-container browser.env", async () => {

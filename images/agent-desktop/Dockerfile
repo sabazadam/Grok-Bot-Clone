@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb x11vnc openbox tint2 xterm \
     # noVNC browser-embeddable remote view
     novnc websockify \
-    # input + screenshot + window tooling for the actuator
-    xdotool scrot x11-utils x11-xserver-utils procps \
+    # input + screenshot + window/clipboard tooling for the actuator
+    xdotool scrot x11-utils x11-xserver-utils procps wmctrl xclip \
     # apps the agent uses
-    chromium fonts-dejavu fonts-liberation fonts-liberation2 fonts-noto-core fonts-noto-color-emoji tzdata \
+    chromium fonts-dejavu fonts-liberation fonts-liberation2 fonts-noto-core fonts-noto-color-emoji fonts-noto-cjk fonts-noto-extra tzdata \
+    # tooling agents commonly need (git for repos, unzip already below)
+    git \
     # file manager + editor niceties
     pcmanfm mousepad \
     # actuator runtime + process supervisor

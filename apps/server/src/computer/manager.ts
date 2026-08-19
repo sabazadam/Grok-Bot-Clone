@@ -12,18 +12,9 @@ import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ComputerAction, ComputerInfo } from "@grokbot/shared";
 import { config } from "../config.js";
+import type { ActionResponse, BrowserSyncOptions, ComputerBackend, ExecResult } from "./backend.js";
 
-export interface ExecResult {
-  ok: boolean;
-  exitCode: number;
-  output: string;
-}
-
-export interface ActionResponse {
-  ok: boolean;
-  error?: string;
-  cursor?: { x: number; y: number };
-}
+export type { ExecResult, ActionResponse } from "./backend.js";
 
 function parseMemory(s: string): number {
   const m = /^(\d+(?:\.\d+)?)([kmg]?)b?$/i.exec(s.trim());
@@ -36,7 +27,8 @@ function parseMemory(s: string): number {
 const CONTAINER_PREFIX = "agentos-";
 const VOLUME_SUFFIX = "-home";
 
-export class ComputerManager {
+/** The Docker-backed implementation of ComputerBackend (one container per agent). */
+export class ComputerManager implements ComputerBackend {
   private docker: Docker;
   /** agentId -> last actuator interaction, for idle stop */
   private lastUsed = new Map<string, number>();
@@ -299,10 +291,7 @@ export class ComputerManager {
    * agent's stealth toggle / UA / timezone / locale take effect without recreating
    * the container.
    */
-  async syncBrowserConfig(
-    agentId: string,
-    opts: { stealth: boolean; userAgent: string; timezone: string; locale: string; engine?: string; camouConfig?: string },
-  ): Promise<void> {
+  async syncBrowserConfig(agentId: string, opts: BrowserSyncOptions): Promise<void> {
     const esc = (s: string) => s.replace(/'/g, "'\\''");
     const content = [
       `STEALTH=${opts.stealth ? "1" : "0"}`,

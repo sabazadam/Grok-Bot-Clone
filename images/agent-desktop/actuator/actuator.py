@@ -16,6 +16,8 @@ Endpoints:
 """
 import json
 import os
+import random
+import re
 import signal
 import subprocess
 import tempfile
@@ -26,6 +28,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 DISPLAY = os.environ.get("DISPLAY", ":0")
 PORT = int(os.environ.get("ACTUATOR_PORT", "8090"))
 RESOLUTION = os.environ.get("RESOLUTION", "1280x800")
+# Human-like input timing (subtle mouse paths, variable typing, realistic scroll). Set HUMANIZE=0 to
+# get deterministic, instant input (useful for tests). Kept subtle so it isn't its own bot signature.
+HUMANIZE = os.environ.get("HUMANIZE", "1") != "0"
 
 ENV = {**os.environ, "DISPLAY": DISPLAY}
 EXEC_LOCK = threading.Lock()
@@ -87,6 +92,22 @@ def xdotool(*args: str) -> None:
         raise RuntimeError(f"xdotool {' '.join(args[:2])} failed: {r.stderr.strip() or r.stdout.strip()}")
 
 
+def get_clipboard() -> str:
+    try:
+        r = run(["xclip", "-selection", "clipboard", "-o"], timeout=5)
+        return r.stdout if r.returncode == 0 else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def set_clipboard(text: str) -> bool:
+    try:
+        p = subprocess.run(["xclip", "-selection", "clipboard", "-i"], input=text, env=ENV, text=True, timeout=5)
+        return p.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def take_screenshot() -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
         path = f.name
@@ -106,37 +127,91 @@ def take_screenshot() -> bytes:
 SCROLL_BUTTONS = {"up": "4", "down": "5", "left": "6", "right": "7"}
 
 
+def _cursor_pos() -> tuple[int, int] | None:
+    try:
+        r = run(["xdotool", "getmouselocation", "--shell"])
+        loc = dict(line.split("=") for line in r.stdout.strip().splitlines() if "=" in line)
+        return int(loc.get("X", 0)), int(loc.get("Y", 0))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def human_move(x: int, y: int) -> None:
+    """Move the cursor to (x, y). When HUMANIZE, glide along an eased path with tiny jitter instead of
+    teleporting — this makes multi-step UI tasks land more reliably and looks less robotic."""
+    x, y = int(x), int(y)
+    if not HUMANIZE:
+        xdotool("mousemove", "--sync", str(x), str(y))
+        return
+    start = _cursor_pos()
+    if start is None:
+        xdotool("mousemove", "--sync", str(x), str(y))
+        return
+    x0, y0 = start
+    dist = ((x - x0) ** 2 + (y - y0) ** 2) ** 0.5
+    steps = max(4, min(24, int(dist / 40) + 4))
+    for i in range(1, steps):
+        t = i / steps
+        ease = 3 * t * t - 2 * t * t * t  # smoothstep ease-in-out
+        nx = x0 + (x - x0) * ease + random.uniform(-1.5, 1.5)
+        ny = y0 + (y - y0) * ease + random.uniform(-1.5, 1.5)
+        xdotool("mousemove", "--sync", str(int(round(nx))), str(int(round(ny))))
+        time.sleep(random.uniform(0.006, 0.02))
+    xdotool("mousemove", "--sync", str(x), str(y))  # settle exactly on target
+
+
+def human_pause(lo: float = 0.04, hi: float = 0.12) -> None:
+    time.sleep(random.uniform(lo, hi) if HUMANIZE else 0.03)
+
+
+def type_text(text: str) -> None:
+    """Type text with variable per-key delay and small inter-word pauses when HUMANIZE."""
+    if not text:
+        return
+    if not HUMANIZE:
+        xdotool("type", "--delay", "20", "--", text)
+        return
+    for part in re.split(r"(\s+)", text):
+        if not part:
+            continue
+        xdotool("type", "--delay", str(random.randint(45, 100)), "--", part)
+        time.sleep(random.uniform(0.02, 0.12))
+
+
 def do_action(a: dict) -> dict:
     t = a.get("type")
     if t == "screenshot":
         pass  # caller fetches /screenshot; treated as a no-op here
     elif t in ("left_click", "double_click", "triple_click", "right_click", "middle_click"):
-        x, y = str(int(a["x"])), str(int(a["y"]))
         button = {"right_click": "3", "middle_click": "2"}.get(t, "1")
         repeat = {"double_click": "2", "triple_click": "3"}.get(t, "1")
-        xdotool("mousemove", "--sync", x, y)
-        time.sleep(0.05)
+        human_move(int(a["x"]), int(a["y"]))
+        human_pause()  # brief dwell before pressing, like a person settling on the target
         xdotool("click", "--repeat", repeat, "--delay", "80", button)
     elif t == "mouse_move":
-        xdotool("mousemove", "--sync", str(int(a["x"])), str(int(a["y"])))
+        human_move(int(a["x"]), int(a["y"]))
     elif t == "left_click_drag":
-        xdotool("mousemove", "--sync", str(int(a["startX"])), str(int(a["startY"])))
+        human_move(int(a["startX"]), int(a["startY"]))
         xdotool("mousedown", "1")
-        time.sleep(0.15)
-        xdotool("mousemove", "--sync", str(int(a["x"])), str(int(a["y"])))
-        time.sleep(0.15)
+        human_pause(0.1, 0.2)
+        human_move(int(a["x"]), int(a["y"]))
+        human_pause(0.1, 0.2)
         xdotool("mouseup", "1")
     elif t == "scroll":
         x, y = a.get("x"), a.get("y")
         if x is not None and y is not None:
-            xdotool("mousemove", "--sync", str(int(x)), str(int(y)))
+            human_move(int(x), int(y))
         button = SCROLL_BUTTONS.get(a.get("direction", "down"), "5")
         amount = max(1, min(int(a.get("amount", 3)), 30))
-        xdotool("click", "--repeat", str(amount), "--delay", "60", button)
+        if HUMANIZE:
+            # wheel notches in small bursts with slight pauses, rather than one instant blast
+            for _ in range(amount):
+                xdotool("click", button)
+                time.sleep(random.uniform(0.03, 0.09))
+        else:
+            xdotool("click", "--repeat", str(amount), "--delay", "60", button)
     elif t == "type":
-        text = str(a.get("text", ""))
-        if text:
-            xdotool("type", "--delay", "20", "--", text)
+        type_text(str(a.get("text", "")))
     elif t == "key":
         xdotool("key", "--", normalize_key(str(a["key"])))
     elif t == "hold_key":
@@ -175,7 +250,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith("/health"):
-            self._json(200, {"ok": True, "resolution": RESOLUTION})
+            self._json(200, {"ok": True, "resolution": RESOLUTION, "humanize": HUMANIZE})
+        elif self.path.startswith("/clipboard"):
+            self._json(200, {"ok": True, "text": get_clipboard()})
         elif self.path.startswith("/screenshot"):
             try:
                 png = take_screenshot()
@@ -200,6 +277,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, do_action(body))
             except Exception as e:  # noqa: BLE001
                 self._json(200, {"ok": False, "error": str(e)})
+        elif self.path.startswith("/clipboard"):
+            self._json(200, {"ok": set_clipboard(str(body.get("text", "")))})
         elif self.path.startswith("/abort"):
             self._json(200, {"ok": True, "killed": kill_exec()})
         elif self.path.startswith("/exec"):
