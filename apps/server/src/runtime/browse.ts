@@ -4,6 +4,21 @@ export function inferBrowseUrl(prompt: string): string | undefined {
   return inferBrowseUrls(prompt)[0];
 }
 
+/** Only http(s) URLs with no shell metacharacters — these are interpolated into /bin/sh. */
+export function isSafeBrowseUrl(url: string): boolean {
+  if (!url || url.length > 2048 || /[\s'"\\`$|]/.test(url)) return false;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function shSingleQuote(value: string): string {
+  return `'${value.replace(/'/g, "")}'`;
+}
+
 const WEATHER_STOP = new Set(["today", "now", "tomorrow", "this", "the", "what", "whats", "a", "is"]);
 
 export function inferWeatherPlace(prompt: string): string | undefined {
@@ -24,7 +39,10 @@ export function inferBrowseUrls(prompt: string): string[] {
   if (!text) return [];
   const urls: string[] = [];
   const rawUrl = text.match(/https?:\/\/[^\s)]+/i);
-  if (rawUrl) urls.push(rawUrl[0].replace(/[.,;:]+$/, ""));
+  if (rawUrl) {
+    const cleaned = rawUrl[0].replace(/[.,;:]+$/, "");
+    if (isSafeBrowseUrl(cleaned)) urls.push(cleaned);
+  }
 
   const search =
     text.match(/(?:open\s+)?google(?:\.com)?(?:\s+and)?\s+search\s+(.+?)(?:[.!?]|$)/i) ||
@@ -41,10 +59,13 @@ export function inferBrowseUrls(prompt: string): string[] {
 
   const place = inferWeatherPlace(text);
   if (place) urls.push(`https://wttr.in/${encodeURIComponent(place)}`);
-  return [...new Set(urls)];
+  return [...new Set(urls)].filter(isSafeBrowseUrl);
 }
 
 export function openBrowserCommand(url: string): string {
-  const safe = url.replace(/'/g, "");
-  return `DISPLAY=:0 nohup /usr/local/bin/browser '${safe}' >/dev/null 2>&1 & sleep 3; echo opened ${safe}`;
+  if (!isSafeBrowseUrl(url)) {
+    throw new Error("refusing to open a non-http(s) or shell-unsafe URL");
+  }
+  const quoted = shSingleQuote(url);
+  return `DISPLAY=:0 nohup /usr/local/bin/browser ${quoted} >/dev/null 2>&1 & sleep 3; echo opened ${quoted}`;
 }

@@ -20,7 +20,7 @@ import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
 import { communicationCaption, isSilentReply, shouldPostToolToChat } from "./report.js";
-import { inferBrowseUrls, openBrowserCommand } from "./browse.js";
+import { inferBrowseUrls, isSafeBrowseUrl, openBrowserCommand } from "./browse.js";
 
 export interface RunTaskOptions {
   agentId: string;
@@ -66,6 +66,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     if (browseUrls.length) {
       try {
         for (const url of browseUrls) {
+          if (!isSafeBrowseUrl(url)) continue;
           await computerManager.exec(agent.id, openBrowserCommand(url), 20);
         }
         const caption = `Opened ${browseUrls.join(" and ")}`;
