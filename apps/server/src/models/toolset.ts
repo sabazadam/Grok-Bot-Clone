@@ -93,7 +93,7 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
     {
       name: "call_plugin",
       description:
-        "Call a configured plugin / MCP connector. Use the plugin id (or name) and the tool name from the Plugins section of your system prompt. Not for routine sandbox work.",
+        "Call a configured plugin / MCP connector. This is approval-gated because MCP runs on the host (not the agent sandbox) and webhooks send data off-box. Use the plugin id (or name) and the tool name from the Plugins section of your system prompt.",
       parameters: {
         pluginId: { type: "string", description: "Plugin id or exact plugin name" },
         toolName: { type: "string", description: "Tool to invoke on that plugin" },

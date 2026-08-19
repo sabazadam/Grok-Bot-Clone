@@ -66,7 +66,9 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     if (browseUrls.length) {
       try {
         for (const url of browseUrls) {
-          await computerManager.exec(agent.id, openBrowserCommand(url), 20);
+          const cmd = openBrowserCommand(url);
+          if (!cmd) continue;
+          await computerManager.exec(agent.id, cmd, 20);
         }
         const caption = `Opened ${browseUrls.join(" and ")}`;
         store.addTaskStep(task.id, 0, caption, JSON.stringify({ tool: "bash", command: "browser" }));

@@ -19,17 +19,33 @@ export function inferWeatherPlace(prompt: string): string | undefined {
   return undefined;
 }
 
+function sanitizeHttpUrl(raw: string): string | undefined {
+  const trimmed = raw.replace(/[.,;:]+$/, "");
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return undefined;
+    return u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export function inferBrowseUrls(prompt: string): string[] {
   const text = prompt.replace(/\s+/g, " ").trim();
   if (!text) return [];
   const urls: string[] = [];
   const rawUrl = text.match(/https?:\/\/[^\s)]+/i);
-  if (rawUrl) urls.push(rawUrl[0].replace(/[.,;:]+$/, ""));
+  if (rawUrl) {
+    const http = sanitizeHttpUrl(rawUrl[0]);
+    if (http) urls.push(http);
+  }
 
+  // Require an explicit web intent. Bare "search my notes" / "find out why X failed"
+  // must not boot a browser tab.
   const search =
     text.match(/(?:open\s+)?google(?:\.com)?(?:\s+and)?\s+search\s+(.+?)(?:[.!?]|$)/i) ||
-    text.match(/search(?:\s+(?:on\s+)?google)?(?:\s+for)?\s+(.+?)(?:[.!?]|$)/i) ||
-    text.match(/(?:look up|find out)\s+(.+?)(?:[.!?]|$)/i);
+    text.match(/search\s+(?:on\s+)?google(?:\s+for)?\s+(.+?)(?:[.!?]|$)/i) ||
+    text.match(/(?:web|online|internet)\s+search(?:\s+for)?\s+(.+?)(?:[.!?]|$)/i);
   if (search?.[1]) {
     urls.push(`https://www.google.com/search?q=${encodeURIComponent(search[1].trim())}`);
   } else if (/\b(weather|forecast|news|browse)\b/i.test(text)) {
@@ -44,7 +60,9 @@ export function inferBrowseUrls(prompt: string): string[] {
   return [...new Set(urls)];
 }
 
-export function openBrowserCommand(url: string): string {
-  const safe = url.replace(/'/g, "");
+export function openBrowserCommand(url: string): string | undefined {
+  const http = sanitizeHttpUrl(url);
+  if (!http) return undefined;
+  const safe = http.replace(/['\\]/g, "");
   return `DISPLAY=:0 nohup /usr/local/bin/browser '${safe}' >/dev/null 2>&1 & sleep 3; echo opened ${safe}`;
 }

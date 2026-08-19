@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { config, ensureDataDirs, liveModelConfig } from "./config.js";
+import { config, ensureDataDirs, isAllowedCorsOrigin } from "./config.js";
 import { registerRoutes } from "./routes.js";
 import { getDb } from "./db.js";
 import { computerManager } from "./computer/manager.js";
@@ -14,13 +14,6 @@ async function main() {
   ensureDataDirs();
   getDb();
   service.reconcileStatuses();
-  const live = liveModelConfig();
-  if (live) {
-    const promoted = store.promoteMockAgents(live.provider, live.model);
-    for (const agent of promoted) {
-      broadcast({ type: "agent_updated", agent });
-    }
-  }
   for (const agent of store.assignMissingFaceShapes()) {
     broadcast({ type: "agent_updated", agent });
   }
@@ -30,7 +23,9 @@ async function main() {
     .catch(() => undefined);
 
   const app = Fastify({ logger: { level: "info" }, bodyLimit: 120 * 1024 * 1024 });
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: (origin, cb) => cb(null, isAllowedCorsOrigin(origin)),
+  });
   await app.register(websocket);
 
   app.get("/health", async () => ({ ok: true, name: "grokbot-server", time: Date.now() }));

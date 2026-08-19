@@ -7,6 +7,32 @@ interface Pending {
   reject: (e: Error) => void;
 }
 
+/** Host env keys that are safe to inherit. Never pass API keys or Docker creds into plugins. */
+const MCP_ENV_ALLOW = new Set([
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TMPDIR",
+  "TMP",
+  "TEMP",
+  "XDG_RUNTIME_DIR",
+]);
+
+/** Build the stdio subprocess env: allowlisted host vars + the plugin's own env overlay. */
+export function mcpProcessEnv(pluginEnv?: Record<string, string>): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of MCP_ENV_ALLOW) {
+    const v = process.env[key];
+    if (v !== undefined) env[key] = v;
+  }
+  return { ...env, ...pluginEnv };
+}
+
 export class McpClient {
   private proc: ChildProcessWithoutNullStreams;
   private buf = Buffer.alloc(0);
@@ -16,7 +42,7 @@ export class McpClient {
   constructor(plugin: Plugin) {
     if (!plugin.command) throw new Error("MCP plugin is missing a command");
     this.proc = spawn(plugin.command, plugin.args ?? [], {
-      env: { ...process.env, ...plugin.env },
+      env: mcpProcessEnv(plugin.env),
       stdio: ["pipe", "pipe", "pipe"],
     });
     this.proc.stdout.on("data", (chunk: Buffer) => this.onData(chunk));
@@ -122,14 +148,29 @@ export class McpClient {
 }
 
 const pool = new Map<string, McpClient>();
+const connecting = new Map<string, Promise<McpClient>>();
 
 export async function mcpFor(plugin: Plugin): Promise<McpClient> {
   const existing = pool.get(plugin.id);
   if (existing) return existing;
-  const client = new McpClient(plugin);
-  await client.initialize();
-  pool.set(plugin.id, client);
-  return client;
+  const inflight = connecting.get(plugin.id);
+  if (inflight) return inflight;
+
+  const pending = (async () => {
+    const client = new McpClient(plugin);
+    try {
+      await client.initialize();
+      pool.set(plugin.id, client);
+      return client;
+    } catch (err) {
+      client.close();
+      throw err;
+    } finally {
+      connecting.delete(plugin.id);
+    }
+  })();
+  connecting.set(plugin.id, pending);
+  return pending;
 }
 
 export function closeMcp(pluginId: string): void {

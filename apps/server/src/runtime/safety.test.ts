@@ -36,4 +36,28 @@ describe("safety rule engine", () => {
     expect(evaluateInvocation({ id: "2", tool: "task_complete", summary: "done" }).needsApproval).toBe(false);
     expect(evaluateInvocation({ id: "3", tool: "send_message", text: "Need takeover." }).needsApproval).toBe(false);
   });
+
+  it("flags host-side plugins, new routines, and new teammates", () => {
+    expect(
+      evaluateInvocation({ id: "1", tool: "call_plugin", pluginId: "crm", toolName: "search", arguments: {} }).needsApproval,
+    ).toBe(true);
+    expect(
+      evaluateInvocation({
+        id: "2",
+        tool: "create_routine",
+        name: "Digest",
+        prompt: "summarize inbox",
+        schedule: "every morning",
+      }).needsApproval,
+    ).toBe(true);
+    expect(
+      evaluateInvocation({
+        id: "3",
+        tool: "create_agent",
+        name: "Scout",
+        roleTitle: "Researcher",
+        instructions: "Look things up.",
+      }).needsApproval,
+    ).toBe(true);
+  });
 });

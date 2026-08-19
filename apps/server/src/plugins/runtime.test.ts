@@ -33,6 +33,15 @@ describe("callPlugin", () => {
     });
   });
 
+  it("refuses non-http webhook URLs", async () => {
+    const plugin = store.createPlugin({
+      name: "Local file",
+      kind: "webhook",
+      url: "file:///etc/passwd",
+    });
+    await expect(callPlugin(plugin.id, "read", {})).rejects.toThrow(/http/);
+  });
+
   it("looks up plugins by name and refuses disabled ones", async () => {
     const plugin = store.createPlugin({
       name: "CRM",
