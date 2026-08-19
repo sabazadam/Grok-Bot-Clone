@@ -117,12 +117,14 @@ export class MockAdapter implements ModelAdapter {
     }
   }
 
-  async start(taskPrompt: string, _screenshotB64: string): Promise<AgentDecision> {
+  async start(taskPrompt: string, _screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision> {
+    if (signal?.aborted) throw Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
     this.plan(taskPrompt);
     return this.step();
   }
 
-  async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
+  async next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision> {
+    if (signal?.aborted) throw Object.assign(new Error("This operation was aborted"), { name: "AbortError" });
     for (const o of outcomes) {
       if (o.tool === "request_approval" && /rejected/i.test(o.output)) {
         this.approvalRejected = true;

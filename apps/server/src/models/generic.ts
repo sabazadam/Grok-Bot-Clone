@@ -6,6 +6,7 @@
 import type { ComputerAction } from "@grokbot/shared";
 import type { AdapterInit, AgentDecision, ModelAdapter, ToolOutcome } from "./types.js";
 import type { ToolInvocation } from "./types.js";
+import { requestSignal } from "./abort.js";
 
 type Msg = { role: "system" | "user" | "assistant"; content: unknown };
 
@@ -151,7 +152,7 @@ export class GenericAdapter implements ModelAdapter {
     }
   }
 
-  private async call(): Promise<AgentDecision> {
+  private async call(signal?: AbortSignal): Promise<AgentDecision> {
     const payload: Record<string, unknown> = {
       model: this.init.model,
       messages: this.messages,
@@ -162,7 +163,7 @@ export class GenericAdapter implements ModelAdapter {
 
     const res = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: "POST",
-      signal: AbortSignal.timeout(180_000),
+      signal: requestSignal(180_000, signal),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.init.apiKey}`,
@@ -181,7 +182,7 @@ export class GenericAdapter implements ModelAdapter {
           role: "user",
           content: "This endpoint rejected images. Continue in text-only mode: inspect the computer with bash.",
         });
-        return this.call();
+        return this.call(signal);
       }
       throw new Error(`Model API ${res.status}: ${text.slice(0, 500)}`);
     }
@@ -202,7 +203,7 @@ export class GenericAdapter implements ModelAdapter {
         role: "user",
         content: 'Your reply was not a single valid JSON object. Reply with EXACTLY one JSON object per the protocol, e.g. {"done":true,"message":"..."}.',
       });
-      return this.call();
+      return this.call(signal);
     }
     this.parseFailures = 0;
 
@@ -272,26 +273,26 @@ export class GenericAdapter implements ModelAdapter {
         role: "user",
         content: `Unrecognized action ${JSON.stringify(Object.keys(obj))}. Use the documented protocol.`,
       });
-      return this.call();
+      return this.call(signal);
     }
     return { kind: "act", invocations: [inv], assistantText: thought };
   }
 
-  async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
+  async start(taskPrompt: string, screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision> {
     this.messages.push({
       role: "user",
       content: this.userContent(`TASK:\n${taskPrompt}\n\nCurrent screen:`, screenshotB64),
     });
-    return this.call();
+    return this.call(signal);
   }
 
-  async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
+  async next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision> {
     for (const o of outcomes) {
       const text = `Result${o.isError ? " (ERROR)" : ""}: ${o.output || "ok"}${o.screenshotB64 ? "\nCurrent screen:" : ""}`;
       this.messages.push({ role: "user", content: this.userContent(text, o.screenshotB64) });
     }
     this.trimImages();
-    return this.call();
+    return this.call(signal);
   }
 
   /** Keep only the 3 most recent screenshots in history. */
