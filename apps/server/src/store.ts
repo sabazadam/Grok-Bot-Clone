@@ -430,10 +430,13 @@ export function addMessage(m: NewMessage): Message {
 }
 
 export function listMessages(conversationId: string, limit = 500): Message[] {
-  return getDb()
-    .prepare(`SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT ?`)
+  // Newest `limit` rows, returned oldest-first so chat + transcript stay current.
+  // rowid is the insertion order tiebreaker when several messages share created_at.
+  const newestFirst = getDb()
+    .prepare(`SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at DESC, rowid DESC LIMIT ?`)
     .all(conversationId, limit)
     .map(rowToMessage);
+  return newestFirst.reverse();
 }
 
 export function getMessage(id: string): Message | undefined {
