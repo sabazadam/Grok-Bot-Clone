@@ -1,20 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, Conversation } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 import type { useTheme } from "../theme";
 import { Avatar, GroupAvatar } from "./Avatar";
+import { timeLabel } from "../format";
 
-function timeAgo(ts: number): string {
-  const d = Date.now() - ts;
-  if (d < 60_000) return "now";
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m`;
-  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)}h`;
-  return `${Math.floor(d / 86_400_000)}d`;
-}
-
-function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
-  const { refreshAgents, selectConversation } = useStore();
+function RowMenu({
+  agent,
+  onClose,
+  onNavigate,
+}: {
+  agent: Agent;
+  onClose: () => void;
+  onNavigate: (id: string | null) => void;
+}) {
+  const { refreshAgents } = useStore();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -24,12 +25,12 @@ function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
     return () => document.removeEventListener("mousedown", h);
   }, [onClose]);
 
-  const item = "block w-full px-3 py-2 text-left text-sm hover:brightness-95";
+  const item = "block w-full px-3 py-2 text-left text-[13px] hover:brightness-95";
   return (
     <div
       ref={ref}
       className="absolute right-2 top-11 z-30 w-40 overflow-hidden rounded-xl gb-pop"
-      style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
+      style={{ background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
     >
       <button
         className={item}
@@ -40,7 +41,7 @@ function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
           await refreshAgents();
           const convs = await api.conversations();
           const direct = convs.find((c) => c.kind === "direct" && c.agentIds[0] === copy.id);
-          if (direct) selectConversation(direct.id);
+          if (direct) onNavigate(direct.id);
           onClose();
         }}
       >
@@ -56,7 +57,7 @@ function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
           onClose();
         }}
       >
-        {agent.hidden ? "Unhide" : "Hide from sidebar"}
+        {agent.hidden ? "Unhide" : "Hide"}
       </button>
       <button
         className={item}
@@ -66,7 +67,7 @@ function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
           if (confirm(`Delete ${agent.name}? Its conversation and role are removed.`)) {
             await api.deleteAgent(agent.id, false);
             await refreshAgents();
-            selectConversation(null);
+            onNavigate(null);
           }
           onClose();
         }}
@@ -77,168 +78,294 @@ function RowMenu({ agent, onClose }: { agent: Agent; onClose: () => void }) {
   );
 }
 
+function AgentRow({
+  agent,
+  conv,
+  selected,
+  onOpen,
+  onNavigate,
+}: {
+  agent: Agent;
+  conv?: Conversation;
+  selected: boolean;
+  onOpen: () => void;
+  onNavigate: (id: string | null) => void;
+}) {
+  const { state } = useStore();
+  const [menu, setMenu] = useState(false);
+  const live = state.liveSteps[agent.id];
+  const waiting = agent.status === "waiting_approval";
+  const last = (conv ? state.messages[conv.id] : undefined)?.slice(-1)[0];
+  const waitingDetail =
+    last?.kind === "approval_request" ? last.text : live?.caption;
+  const subtitle = waiting
+    ? waitingDetail
+      ? `Waiting for you: ${waitingDetail}`
+      : "Waiting for you"
+    : agent.status === "working" && live
+      ? live.caption
+      : last?.text || agent.roleTitle || "Agent";
+  const when = conv?.lastMessageAt ?? agent.createdAt;
+
+  return (
+    <div className="group relative">
+      <button
+        onClick={onOpen}
+        className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
+        style={{ background: selected ? "var(--selected)" : "transparent" }}
+      >
+        <Avatar agent={agent} size={36} showStatus />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+              {agent.name}
+            </span>
+            {!waiting && (
+              <span className="shrink-0 text-[11px]" style={{ color: "var(--muted)" }}>
+                {timeLabel(when)}
+              </span>
+            )}
+          </div>
+          <div
+            className="truncate text-[12px]"
+            style={{ color: waiting ? "var(--wait)" : "var(--muted)", fontWeight: waiting ? 600 : 400 }}
+          >
+            {subtitle}
+          </div>
+        </div>
+        {waiting && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--wait)" }} />}
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setMenu((v) => !v);
+        }}
+        className="absolute right-2 top-1/2 hidden -translate-y-1/2 text-[16px] leading-none group-hover:block"
+        style={{ color: "var(--muted)" }}
+      >
+        ⋯
+      </button>
+      {menu && <RowMenu agent={agent} onClose={() => setMenu(false)} onNavigate={onNavigate} />}
+    </div>
+  );
+}
+
+function Section({
+  title,
+  children,
+  collapsed,
+  onToggle,
+}: {
+  title: string;
+  children: React.ReactNode;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="mb-1">
+      <button type="button" onClick={onToggle} className="gb-section flex w-full items-center gap-1.5">
+        <span className="text-[9px] opacity-70">{collapsed ? "▶" : "▼"}</span>
+        {title}
+      </button>
+      {!collapsed && children}
+    </div>
+  );
+}
+
 export function Sidebar({
   theme,
   onNewAgent,
   onNewGroup,
+  onNavigate,
 }: {
   theme: ReturnType<typeof useTheme>;
   onNewAgent: () => void;
   onNewGroup: () => void;
+  onNavigate: (id: string | null) => void;
 }) {
-  const { state, selectConversation } = useStore();
+  const { state } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
-  const [rowMenu, setRowMenu] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
-  const agentById = new Map(state.agents.map((a) => [a.id, a]));
-  const hiddenIds = new Set(state.agents.filter((a) => a.hidden).map((a) => a.id));
-  const hiddenCount = hiddenIds.size;
+  const agentById = useMemo(() => new Map(state.agents.map((a) => [a.id, a])), [state.agents]);
+  const directByAgent = useMemo(() => {
+    const m = new Map<string, Conversation>();
+    for (const c of state.conversations) {
+      if (c.kind === "direct" && c.agentIds[0]) m.set(c.agentIds[0], c);
+    }
+    return m;
+  }, [state.conversations]);
 
-  function rowFor(conv: Conversation) {
-    const isSelected = state.selectedId === conv.id;
-    const members = conv.agentIds.map((id) => agentById.get(id)).filter((x): x is Agent => !!x);
-    const single = conv.kind === "direct" ? members[0] : undefined;
-    const live = single ? state.liveSteps[single.id] : undefined;
-    const subtitle =
-      single && single.status === "working" && live
-        ? live.caption
-          : single
-          ? `${single.roleTitle || "Agent"}${single.isTeamLead ? " · lead" : ""}`
-          : `${members.length} agents`;
-    return (
-      <div key={conv.id} className="group relative">
-        <button
-          onClick={() => selectConversation(conv.id)}
-          className="flex w-full items-center gap-3 rounded-2xl px-2.5 py-2 text-left transition-colors"
-          style={{ background: isSelected ? "var(--selected)" : "transparent" }}
-          onMouseEnter={(e) => {
-            if (!isSelected) e.currentTarget.style.background = "var(--hover)";
-          }}
-          onMouseLeave={(e) => {
-            if (!isSelected) e.currentTarget.style.background = "transparent";
-          }}
-        >
-          {single ? <Avatar agent={single} size={44} /> : <GroupAvatar agents={members} size={44} />}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="truncate text-[15px] font-semibold" style={{ color: isSelected ? "var(--selected-text)" : "var(--text)" }}>
-                {conv.title}
-              </span>
-              <span className="shrink-0 text-[11px]" style={{ color: isSelected ? "var(--selected-text)" : "var(--muted)" }}>
-                {timeAgo(conv.lastMessageAt)}
-              </span>
-            </div>
-            <div className="truncate text-[13px]" style={{ color: isSelected ? "var(--selected-text)" : "var(--muted)", opacity: isSelected ? 0.85 : 1 }}>
-              {conv.kind === "agent_dm" ? "agent ↔ agent" : subtitle}
-            </div>
-          </div>
-        </button>
-        {single && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setRowMenu(rowMenu === conv.id ? null : single.id);
-            }}
-            className="absolute right-2 top-1/2 hidden -translate-y-1/2 rounded-lg px-1.5 py-0.5 text-lg leading-none group-hover:block"
-            style={{ color: isSelected ? "var(--selected-text)" : "var(--muted)" }}
-            title="More"
-          >
-            ⋯
-          </button>
-        )}
-        {rowMenu === single?.id && single && <RowMenu agent={single} onClose={() => setRowMenu(null)} />}
-      </div>
-    );
-  }
-
-  const sorted = [...state.conversations].sort((a, b) => b.lastMessageAt - a.lastMessageAt);
-  // Agent-to-agent delegation now lands in the target agent's own chat, so there are no
-  // separate "agent ↔ agent" threads cluttering the sidebar (legacy ones are filtered out).
-  const chats = sorted.filter((c) => {
-    if (c.kind === "agent_dm") return false;
-    if (c.kind === "direct" && c.agentIds[0] && hiddenIds.has(c.agentIds[0]) && !showHidden) return false;
+  const q = query.trim().toLowerCase();
+  const visible = state.agents.filter((a) => {
+    if (a.hidden && !showHidden) return false;
+    if (
+      q &&
+      !a.name.toLowerCase().includes(q) &&
+      !a.roleTitle.toLowerCase().includes(q) &&
+      !(a.team ?? "").toLowerCase().includes(q)
+    ) {
+      return false;
+    }
     return true;
   });
+  const leaders = visible.filter((a) => a.isTeamLead);
+  const nonLeaders = visible.filter((a) => !a.isTeamLead);
+  const teamNames = [...new Set(nonLeaders.map((a) => (a.team ?? "").trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  const unassigned = nonLeaders.filter((a) => !(a.team ?? "").trim());
+  const groups = state.conversations.filter((c) => {
+    if (c.kind !== "group") return false;
+    if (q && !c.title.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  const hiddenCount = state.agents.filter((a) => a.hidden).length;
+
+  function openAgent(agent: Agent) {
+    const conv = directByAgent.get(agent.id);
+    if (conv) onNavigate(conv.id);
+  }
+
+  function toggle(title: string) {
+    setCollapsed((c) => ({ ...c, [title]: !c[title] }));
+  }
+
+  function rows(agents: Agent[]) {
+    return agents.map((a) => (
+      <AgentRow
+        key={a.id}
+        agent={a}
+        conv={directByAgent.get(a.id)}
+        selected={state.selectedId === directByAgent.get(a.id)?.id}
+        onOpen={() => openAgent(a)}
+        onNavigate={onNavigate}
+      />
+    ));
+  }
 
   return (
-    <aside
-      className="flex h-full w-[320px] shrink-0 flex-col"
-      style={{ background: "var(--sidebar)", borderRight: "1px solid var(--border)" }}
-    >
-      <div className="flex items-center justify-between px-4 pt-3 pb-2">
-        <h1 className="text-[19px] font-bold tracking-tight" style={{ color: "var(--text)" }}>
-          GrokBot
-        </h1>
-        <div className="flex items-center gap-1.5">
+    <aside className="flex h-full w-[292px] shrink-0 flex-col" style={{ background: "var(--sidebar)", borderRight: "1px solid var(--hairline)" }}>
+      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+        <div className="relative min-w-0 flex-1">
+          <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-[13px]" style={{ color: "var(--muted)" }}>
+            ⌕
+          </span>
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" className="gb-search" />
+        </div>
+        <div className="relative">
           <button
-            onClick={theme.toggle}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-[15px] transition-colors"
-            style={{ color: "var(--muted)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = "var(--hover)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-            title={theme.theme === "light" ? "Switch to dark" : "Switch to light"}
+            onClick={() => setMenuOpen((v) => !v)}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-light"
+            style={{ background: "#111", color: "#fff" }}
+            title="New"
           >
-            {theme.theme === "light" ? "🌙" : "☀️"}
+            +
           </button>
-          <div className="relative">
-            <button
-              onClick={() => setMenuOpen((v) => !v)}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-xl font-light text-white"
-              style={{ background: "var(--accent)" }}
-              title="New"
+          {menuOpen && (
+            <div
+              className="absolute right-0 z-30 mt-1 w-44 overflow-hidden rounded-xl gb-pop"
+              style={{ background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
             >
-              +
-            </button>
-            {menuOpen && (
-              <div
-                className="absolute right-0 z-30 mt-1 w-48 overflow-hidden rounded-xl gb-pop"
-                style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
+              <button
+                className="block w-full px-3 py-2 text-left text-[13px]"
+                style={{ color: "var(--text)" }}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNewAgent();
+                }}
               >
-                <button
-                  className="block w-full px-4 py-2.5 text-left text-sm hover:brightness-95"
-                  style={{ color: "var(--text)" }}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNewAgent();
-                  }}
-                >
-                  New agent
-                </button>
-                <button
-                  className="block w-full px-4 py-2.5 text-left text-sm hover:brightness-95 disabled:opacity-40"
-                  style={{ color: "var(--text)" }}
-                  disabled={state.agents.length === 0}
-                  onClick={() => {
-                    setMenuOpen(false);
-                    onNewGroup();
-                  }}
-                >
-                  New group chat
-                </button>
-              </div>
-            )}
-          </div>
+                New agent
+              </button>
+              <button
+                className="block w-full px-3 py-2 text-left text-[13px] disabled:opacity-40"
+                style={{ color: "var(--text)" }}
+                disabled={state.agents.length === 0}
+                onClick={() => {
+                  setMenuOpen(false);
+                  onNewGroup();
+                }}
+              >
+                New group
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 space-y-0.5 overflow-y-auto px-2 pb-4">
-        {chats.length === 0 && (
-          <p className="px-3 py-6 text-center text-sm" style={{ color: "var(--muted)" }}>
-            Create your first agent teammate with the + button.
+      <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {leaders.length > 0 && (
+          <Section title="Leaders" collapsed={!!collapsed.Leaders} onToggle={() => toggle("Leaders")}>
+            {rows(leaders)}
+          </Section>
+        )}
+        {teamNames.map((team) => (
+          <Section key={team} title={team} collapsed={!!collapsed[team]} onToggle={() => toggle(team)}>
+            {rows(nonLeaders.filter((a) => (a.team ?? "").trim() === team))}
+          </Section>
+        ))}
+        {unassigned.length > 0 && (
+          <Section
+            title={leaders.length || teamNames.length ? "Unassigned" : "Teammates"}
+            collapsed={!!collapsed.Unassigned}
+            onToggle={() => toggle("Unassigned")}
+          >
+            {rows(unassigned)}
+          </Section>
+        )}
+        {groups.length > 0 && (
+          <Section title="Groups" collapsed={!!collapsed.Groups} onToggle={() => toggle("Groups")}>
+            {groups.map((c) => {
+              const groupMembers = c.agentIds.map((id) => agentById.get(id)).filter((x): x is Agent => !!x);
+              const selected = state.selectedId === c.id;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => onNavigate(c.id)}
+                  className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
+                  style={{ background: selected ? "var(--selected)" : "transparent" }}
+                >
+                  <GroupAvatar agents={groupMembers} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14px] font-semibold">{c.title}</div>
+                    <div className="truncate text-[12px]" style={{ color: "var(--muted)" }}>
+                      {groupMembers.length} agents
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </Section>
+        )}
+
+        {visible.length === 0 && groups.length === 0 && (
+          <p className="px-3 py-8 text-center text-[13px]" style={{ color: "var(--muted)" }}>
+            Create a teammate with +
           </p>
         )}
-        {chats.map(rowFor)}
 
         {hiddenCount > 0 && (
-          <button
-            onClick={() => setShowHidden((v) => !v)}
-            className="mt-3 w-full px-3 py-2 text-left text-[12px]"
-            style={{ color: "var(--muted)" }}
-          >
+          <button onClick={() => setShowHidden((v) => !v)} className="mt-2 w-full px-3 py-2 text-left text-[12px]" style={{ color: "var(--muted)" }}>
             {showHidden ? "Hide" : "Show"} hidden ({hiddenCount})
           </button>
         )}
+      </div>
+
+      <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderTop: "1px solid var(--hairline)" }}>
+        <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px]" style={{ color: "var(--text)" }} title="Plugins (coming soon)">
+          <span className="text-[15px]">⌁</span> Plugins
+        </button>
+        <span className="flex-1" />
+        <button
+          onClick={theme.toggle}
+          className="rounded-lg px-2 py-1 text-[13px]"
+          style={{ color: "var(--muted)" }}
+          title={theme.theme === "light" ? "Dark mode" : "Light mode"}
+        >
+          {theme.theme === "light" ? "☾" : "☀"}
+        </button>
       </div>
     </aside>
   );

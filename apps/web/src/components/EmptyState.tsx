@@ -1,4 +1,5 @@
 import { useStore } from "../store";
+import { BotFace } from "./Avatar";
 
 const SUGGESTED = [
   { role: "Researcher", blurb: "digs across the web and writes up findings" },
@@ -12,11 +13,11 @@ export function EmptyState({ onNewAgent }: { onNewAgent: () => void }) {
 
   return (
     <div className="flex flex-1 flex-col items-center justify-center px-8" style={{ color: "var(--text)" }}>
-      <div
-        className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl text-3xl"
-        style={{ background: "var(--accent)", color: "var(--accent-contrast)", boxShadow: "var(--shadow)" }}
-      >
-        💬
+      <div className="mb-6 flex items-end gap-2">
+        <BotFace color="#F46A1B" shape="circle" mood="idle" size={44} />
+        <BotFace color="#8B5A3C" shape="drop" mood="write" size={36} />
+        <BotFace color="#E56B8A" shape="squircle" mood="talk" size={32} />
+        <BotFace color="#D6453D" shape="hexagon" mood="wait" size={28} />
       </div>
       <h2 className="text-2xl font-bold tracking-tight">Your AI teammates</h2>
       <p className="mt-2 max-w-md text-center text-[15px]" style={{ color: "var(--muted)" }}>

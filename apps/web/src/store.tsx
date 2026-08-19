@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
 import type { Agent, Approval, Conversation, Message, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
 import { api, type AppConfig } from "./api";
 
@@ -30,6 +30,7 @@ type Action =
   | { type: "select"; id: string | null }
   | { type: "messages_loaded"; convId: string; messages: Message[] }
   | { type: "approvals_loaded"; approvals: Approval[] }
+  | { type: "conversations"; conversations: Conversation[] }
   | { type: "event"; event: ServerEvent }
   | { type: "agents"; agents: Agent[] };
 
@@ -54,6 +55,8 @@ function reducer(state: State, action: Action): State {
       };
     case "agents":
       return { ...state, agents: action.agents };
+    case "conversations":
+      return { ...state, conversations: action.conversations };
     case "select":
       return { ...state, selectedId: action.id };
     case "messages_loaded":
@@ -143,6 +146,8 @@ const Ctx = createContext<{
   state: State;
   dispatch: React.Dispatch<Action>;
   refreshAgents: () => Promise<void>;
+  refreshConversations: () => Promise<void>;
+  loadMessages: (id: string) => Promise<void>;
   selectConversation: (id: string | null) => void;
 } | null>(null);
 
@@ -190,22 +195,43 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const refreshAgents = useCallback(async () => {
+    dispatch({ type: "agents", agents: await api.agents() });
+  }, []);
+
+  const refreshConversations = useCallback(async () => {
+    dispatch({ type: "conversations", conversations: await api.conversations() });
+  }, []);
+
+  const loadMessages = useCallback(async (id: string) => {
+    const messages = await api.messages(id);
+    dispatch({ type: "messages_loaded", convId: id, messages });
+    try {
+      const approvals = await api.approvals(id);
+      dispatch({ type: "approvals_loaded", approvals });
+    } catch {
+      /* agent_dm threads may not expose approvals */
+    }
+  }, []);
+
+  const selectConversation = useCallback((id: string | null) => {
+    dispatch({ type: "select", id });
+    if (id) {
+      void api.messages(id).then((messages) => dispatch({ type: "messages_loaded", convId: id, messages }));
+      void api.approvals(id).then((approvals) => dispatch({ type: "approvals_loaded", approvals })).catch(() => undefined);
+    }
+  }, []);
+
   const value = useMemo(
     () => ({
       state,
       dispatch,
-      refreshAgents: async () => {
-        dispatch({ type: "agents", agents: await api.agents() });
-      },
-      selectConversation: (id: string | null) => {
-        dispatch({ type: "select", id });
-        if (id && !state.messages[id]) {
-          void api.messages(id).then((messages) => dispatch({ type: "messages_loaded", convId: id, messages }));
-          void api.approvals(id).then((approvals) => dispatch({ type: "approvals_loaded", approvals }));
-        }
-      },
+      refreshAgents,
+      refreshConversations,
+      loadMessages,
+      selectConversation,
     }),
-    [state],
+    [state, refreshAgents, refreshConversations, loadMessages, selectConversation],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

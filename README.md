@@ -198,7 +198,8 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Connectors / Plugins / MCP | yes | not yet |
 | Chat attachments, threads, reactions | yes | not yet |
 | Notifications (done / needs input) | desktop + iOS | not yet |
-| Search / pin / @everyone | yes | not yet |
+| Search / pin / @everyone | yes | sidebar search + `@everyone`; pin not yet |
+| Hierarchical agent↔agent chat | view-only panel in the current workspace, not a sidebar chat | yes — `Messaged` / `From` chips open the private thread |
 | Mobile apps | iOS | not yet |
 | Local-computer execution | optional, approval-gated | no (agents stay in their container) |
 

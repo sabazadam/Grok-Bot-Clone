@@ -3,7 +3,7 @@ import type { Agent, Provider } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 
-const COLORS = ["#0a84ff", "#5e5ce6", "#30d158", "#ff9f0a", "#ff375f", "#ff2d55", "#bf5af2", "#64d2ff"];
+const COLORS = ["#F46A1B", "#D6453D", "#8B5A3C", "#E56B8A", "#C48A3A", "#6B4F3A", "#E85D4C", "#5E5CE6"];
 const ROLE_EXAMPLES = ["Researcher", "Chief of Staff", "Talent Scout", "Expense Manager", "Bug Reporter", "Trip Planner"];
 
 const field =
@@ -25,6 +25,7 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
   const [collaborationEnabled, setCollaborationEnabled] = useState(existing?.collaborationEnabled ?? true);
   const [stealthBrowsing, setStealthBrowsing] = useState(existing?.stealthBrowsing ?? true);
   const [isTeamLead, setIsTeamLead] = useState(existing?.isTeamLead ?? false);
+  const [team, setTeam] = useState(existing?.team ?? "");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -40,7 +41,7 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
     setBusy(true);
     setError(null);
     try {
-      const body = { name: name.trim(), roleTitle: roleTitle.trim(), instructions, avatarColor, provider, model: model.trim(), collaborationEnabled, stealthBrowsing, isTeamLead };
+      const body = { name: name.trim(), roleTitle: roleTitle.trim(), instructions, avatarColor, provider, model: model.trim(), collaborationEnabled, stealthBrowsing, isTeamLead, team: team.trim() };
       if (existing) {
         await api.updateAgent(existing.id, body);
         await refreshAgents();
@@ -74,6 +75,15 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
 
         <label className={label} style={labelStyle}>Name</label>
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Nova" className={`${field} mb-3`} style={fieldStyle} />
+
+        <label className={label} style={labelStyle}>Team / folder</label>
+        <input
+          value={team}
+          onChange={(e) => setTeam(e.target.value)}
+          placeholder="e.g. Social Media, Kinguin"
+          className={`${field} mb-3`}
+          style={fieldStyle}
+        />
 
         <label className={label} style={labelStyle}>Job / role</label>
         <input
