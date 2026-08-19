@@ -16,8 +16,10 @@ Endpoints:
 """
 import json
 import os
+import signal
 import subprocess
 import tempfile
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,6 +28,26 @@ PORT = int(os.environ.get("ACTUATOR_PORT", "8090"))
 RESOLUTION = os.environ.get("RESOLUTION", "1280x800")
 
 ENV = {**os.environ, "DISPLAY": DISPLAY}
+EXEC_LOCK = threading.Lock()
+EXEC_PROC: subprocess.Popen | None = None
+
+
+def kill_exec() -> bool:
+    """Stop the in-flight /exec process group (Stop now)."""
+    global EXEC_PROC
+    with EXEC_LOCK:
+        proc = EXEC_PROC
+        EXEC_PROC = None
+    if proc is None or proc.poll() is not None:
+        return False
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
+        try:
+            proc.kill()
+        except OSError:
+            return False
+    return True
 
 # Common key aliases -> xdotool keysym names. Provider adapters send a variety of names.
 KEY_ALIASES = {
@@ -178,22 +200,42 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, do_action(body))
             except Exception as e:  # noqa: BLE001
                 self._json(200, {"ok": False, "error": str(e)})
+        elif self.path.startswith("/abort"):
+            self._json(200, {"ok": True, "killed": kill_exec()})
         elif self.path.startswith("/exec"):
             cmd = body.get("cmd", "")
             timeout = min(float(body.get("timeoutSec", 30)), 600.0)
             if not cmd:
                 self._json(400, {"ok": False, "error": "cmd required"})
                 return
+            global EXEC_PROC
             try:
-                r = subprocess.run(
-                    ["bash", "-lc", cmd], env=ENV, capture_output=True, text=True,
-                    timeout=timeout, cwd="/home/agent",
+                proc = subprocess.Popen(
+                    ["bash", "-lc", cmd],
+                    env=ENV,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    cwd="/home/agent",
+                    start_new_session=True,
                 )
-                out = (r.stdout or "") + (("\n" + r.stderr) if r.stderr else "")
-                self._json(200, {"ok": r.returncode == 0, "exitCode": r.returncode, "output": out[-20000:]})
-            except subprocess.TimeoutExpired:
-                self._json(200, {"ok": False, "exitCode": -1, "output": f"timed out after {timeout}s"})
+                with EXEC_LOCK:
+                    EXEC_PROC = proc
+                try:
+                    out, _ = proc.communicate(timeout=timeout)
+                except subprocess.TimeoutExpired:
+                    kill_exec()
+                    self._json(200, {"ok": False, "exitCode": -1, "output": f"timed out after {timeout}s"})
+                    return
+                with EXEC_LOCK:
+                    if EXEC_PROC is proc:
+                        EXEC_PROC = None
+                if proc.returncode is None or proc.returncode < 0:
+                    self._json(200, {"ok": False, "exitCode": -1, "output": (out or "")[-20000:] + "\n(aborted)"})
+                    return
+                self._json(200, {"ok": proc.returncode == 0, "exitCode": proc.returncode, "output": (out or "")[-20000:]})
             except Exception as e:  # noqa: BLE001
+                kill_exec()
                 self._json(200, {"ok": False, "exitCode": -1, "output": str(e)})
         else:
             self._json(404, {"ok": False, "error": "not found"})

@@ -12,7 +12,7 @@ export interface TaskPromptOptions {
   triggeredBy: { kind: "user" } | { kind: "agent"; agentId: string };
 }
 
-export function buildSystemPrompt(agent: Agent): string {
+export function buildSystemPrompt(agent: Agent, extras?: string): string {
   const { width, height } = parseResolution(config.computerResolution);
   const sections: string[] = [];
 
@@ -45,6 +45,7 @@ Message only when it is necessary AND related to the task:
 - save_skill — after a process works, save how to do it so anyone can run it with /Name.
 - create_agent — only when a job needs a long-lived specialist; ask first if the roster should stay small.
 - create_routine — only after a skill/process is proven; schedule repeating work on your computer.
+- call_plugin — use a configured connector (MCP / webhook) when it helps; see the Plugins section when present.
 - task_complete — the finished result for the requester. If no reply is needed, call it with exactly ACK so nothing is posted.
 Never use send_message (or a teammate DM) to say that you clicked, typed, ran a command, or took a screenshot.`,
   );
@@ -97,6 +98,7 @@ Message a teammate only when it genuinely helps the current task (their specialt
 Consequential or irreversible EXTERNAL actions require the user's approval first via request_approval: sending emails/messages to real people, purchasing, deleting non-trivial data, publishing, or submitting forms on the user's behalf. Preparation (drafting, researching, organizing files on your own computer) needs no approval.`,
   );
 
+  if (extras?.trim()) sections.push(extras.trim());
   return sections.join("\n\n");
 }
 

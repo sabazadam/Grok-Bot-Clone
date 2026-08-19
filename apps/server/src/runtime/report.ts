@@ -46,6 +46,7 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
     case "update_memory":
     case "request_approval":
     case "task_complete":
+    case "call_plugin":
       return false;
   }
 }

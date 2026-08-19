@@ -91,6 +91,17 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
       required: ["text"],
     },
     {
+      name: "call_plugin",
+      description:
+        "Call a configured plugin / MCP connector. Use the plugin id (or name) and the tool name from the Plugins section of your system prompt. Not for routine sandbox work.",
+      parameters: {
+        pluginId: { type: "string", description: "Plugin id or exact plugin name" },
+        toolName: { type: "string", description: "Tool to invoke on that plugin" },
+        arguments: { type: "object", description: "JSON arguments for the tool" },
+      },
+      required: ["pluginId", "toolName"],
+    },
+    {
       name: "task_complete",
       description:
         "Call when the task is fully finished. The summary is your one reply to the requester — outcome and where artifacts live. If no reply is needed, use exactly ACK so nothing is posted.",
@@ -159,6 +170,14 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
       return { id, tool: "send_message", text: String(args.text ?? "") };
     case "task_complete":
       return { id, tool: "task_complete", summary: String(args.summary ?? "") };
+    case "call_plugin":
+      return {
+        id,
+        tool: "call_plugin",
+        pluginId: String(args.pluginId ?? args.plugin ?? ""),
+        toolName: String(args.toolName ?? args.name ?? ""),
+        arguments: args.arguments && typeof args.arguments === "object" ? (args.arguments as Record<string, unknown>) : {},
+      };
     case "send_message_to_agent":
       return { id, tool: "send_message_to_agent", toAgentName: String(args.toAgentName ?? ""), text: String(args.text ?? "") };
     default:

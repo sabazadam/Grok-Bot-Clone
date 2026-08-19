@@ -1,10 +1,10 @@
 /** Cooperative task cancellation: running loops poll their AbortSignal. */
 
-const controllers = new Map<string, AbortController>();
+const controllers = new Map<string, { controller: AbortController; agentId: string }>();
 
-export function registerTask(taskId: string): AbortSignal {
+export function registerTask(taskId: string, agentId: string): AbortSignal {
   const c = new AbortController();
-  controllers.set(taskId, c);
+  controllers.set(taskId, { controller: c, agentId });
   return c.signal;
 }
 
@@ -13,8 +13,12 @@ export function unregisterTask(taskId: string): void {
 }
 
 export function cancelTask(taskId: string): boolean {
-  const c = controllers.get(taskId);
-  if (!c) return false;
-  c.abort();
+  const entry = controllers.get(taskId);
+  if (!entry) return false;
+  entry.controller.abort();
   return true;
+}
+
+export function agentIdForTask(taskId: string): string | undefined {
+  return controllers.get(taskId)?.agentId;
 }

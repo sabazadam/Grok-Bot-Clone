@@ -15,6 +15,9 @@ import { runRoutineNow } from "./runtime/scheduler.js";
 import { resolvePendingApproval } from "./runtime/approvals.js";
 import { cancelTask } from "./runtime/cancel.js";
 import { setTakeover } from "./runtime/takeover.js";
+import { saveAttachments, uploadsDir } from "./uploads.js";
+import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
+import { forgetPlugin } from "./plugins/runtime.js";
 
 const providerEnum = z.enum(["anthropic", "openai", "google", "generic"]);
 
@@ -32,9 +35,16 @@ const agentBody = z.object({
 });
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
+  fs.mkdirSync(path.join(config.dataDir, "screenshots"), { recursive: true });
+  fs.mkdirSync(uploadsDir(), { recursive: true });
   await app.register(fastifyStatic, {
     root: path.join(config.dataDir, "screenshots"),
     prefix: "/screenshots/",
+  });
+  await app.register(fastifyStatic, {
+    root: uploadsDir(),
+    prefix: "/uploads/",
+    decorateReply: false,
   });
 
   // Serve the built web UI (single-port mode, used by the desktop app and plain browser
@@ -48,7 +58,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     });
     // SPA fallback: non-asset, non-API GET routes return index.html.
     app.setNotFoundHandler((req, reply) => {
-      if (req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws") && !req.url.startsWith("/screenshots")) {
+      if (req.method === "GET" && !req.url.startsWith("/api") && !req.url.startsWith("/ws") && !req.url.startsWith("/screenshots") && !req.url.startsWith("/uploads")) {
         // Serve from the web-dist root explicitly: reply.sendFile is decorated by the
         // first static registration (screenshots), so pass the correct root here.
         return reply.type("text/html").sendFile("index.html", config.webDist);
@@ -242,14 +252,33 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const conv = store.getConversation(id);
     if (!conv) return reply.code(404).send({ error: "not found" });
     if (conv.kind === "agent_dm") return reply.code(400).send({ error: "agent-to-agent DMs are read-only for the user" });
-    const body = z.object({ text: z.string().min(1).max(20000) }).safeParse(req.body);
+    const body = z
+      .object({
+        text: z.string().max(20000).default(""),
+        attachments: z
+          .array(
+            z.object({
+              name: z.string().min(1).max(160),
+              mime: z.string().max(120).default("application/octet-stream"),
+              dataBase64: z.string().min(1),
+            }),
+          )
+          .max(4)
+          .optional(),
+      })
+      .safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const attachments = body.data.attachments?.length ? saveAttachments(body.data.attachments) : undefined;
+    if (!body.data.text.trim() && !attachments?.length) {
+      return reply.code(400).send({ error: "text or attachment required" });
+    }
 
     const message = store.addMessage({
       conversationId: conv.id,
       sender: { kind: "user" },
       kind: "text",
-      text: body.data.text,
+      text: body.data.text.trim() || (attachments?.length ? `Attached ${attachments.map((a) => a.name).join(", ")}` : ""),
+      attachments,
     });
     broadcast({ type: "message", message });
     dispatchUserMessage(conv, message);
@@ -439,5 +468,105 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const ok = cancelTask(id);
     if (!ok) return reply.code(404).send({ error: "task not running" });
     return { ok: true };
+  });
+
+  app.post("/api/conversations/:id/pin", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ pinned: z.boolean() }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const conv = store.setConversationPinned(id, body.data.pinned);
+    if (!conv) return reply.code(404).send({ error: "not found" });
+    broadcast({ type: "conversation_updated", conversation: conv });
+    return conv;
+  });
+
+  app.post("/api/messages/:id/react", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ emoji: z.string().min(1).max(16) }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const message = store.toggleMessageReaction(id, body.data.emoji);
+    if (!message) return reply.code(404).send({ error: "not found" });
+    broadcast({ type: "message", message });
+    return message;
+  });
+
+  app.get("/api/search", async (req) => {
+    const q = String((req.query as { q?: string }).q ?? "");
+    return store.searchMessages(q);
+  });
+
+  app.get("/api/plugins", async () => store.listPlugins());
+
+  app.post("/api/plugins", async (req, reply) => {
+    const parsed = z
+      .object({
+        name: z.string().min(1).max(60),
+        kind: z.enum(["mcp", "webhook"]),
+        command: z.string().max(400).optional(),
+        args: z.array(z.string().max(200)).optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        url: z.string().url().optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (parsed.data.kind === "mcp" && !parsed.data.command) {
+      return reply.code(400).send({ error: "MCP plugins need a command" });
+    }
+    if (parsed.data.kind === "webhook" && !parsed.data.url) {
+      return reply.code(400).send({ error: "Webhook plugins need a URL" });
+    }
+    const plugin = store.createPlugin(parsed.data);
+    broadcast({ type: "plugin_updated", plugin });
+    return plugin;
+  });
+
+  app.patch("/api/plugins/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const parsed = z
+      .object({
+        name: z.string().min(1).max(60).optional(),
+        enabled: z.boolean().optional(),
+        command: z.string().max(400).optional(),
+        args: z.array(z.string().max(200)).optional(),
+        env: z.record(z.string(), z.string()).optional(),
+        url: z.string().url().optional(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const plugin = store.updatePlugin(id, parsed.data);
+    if (!plugin) return reply.code(404).send({ error: "not found" });
+    broadcast({ type: "plugin_updated", plugin });
+    return plugin;
+  });
+
+  app.delete("/api/plugins/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getPlugin(id)) return reply.code(404).send({ error: "not found" });
+    forgetPlugin(id);
+    store.deletePlugin(id);
+    broadcast({ type: "plugin_deleted", pluginId: id });
+    return { ok: true };
+  });
+
+  app.get("/api/agents/:id/teach", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    return { session: getTeachSession(id) ?? null };
+  });
+
+  app.post("/api/agents/:id/teach/start", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const body = z.object({ name: z.string().min(1).max(60), notes: z.string().max(4000).default("") }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    return startTeach(id, body.data.name, body.data.notes);
+  });
+
+  app.post("/api/agents/:id/teach/stop", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z.object({ save: z.boolean().default(true) }).safeParse(req.body ?? {});
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const skill = await stopTeach(id, body.data.save);
+    return { ok: true, skill, session: getTeachSession(id) };
   });
 }

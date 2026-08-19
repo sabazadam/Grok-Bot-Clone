@@ -9,18 +9,24 @@ import * as store from "../store.js";
 import { broadcast } from "../bus.js";
 import * as service from "../agents/service.js";
 import { deliverAgentMessage } from "./orchestrator.js";
+import { callPlugin } from "../plugins/runtime.js";
 
 export interface ExecContext {
   agent: Agent;
   taskId: string;
   conversationId: string;
   rootMessageId: string;
+  signal?: AbortSignal;
 }
 
-async function execComputerAction(agentId: string, action: ComputerAction): Promise<{ ok: boolean; error?: string; output?: string }> {
+async function execComputerAction(
+  agentId: string,
+  action: ComputerAction,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; error?: string; output?: string }> {
   if (action.type === "batch") {
     for (const step of action.steps) {
-      const r = await execComputerAction(agentId, step);
+      const r = await execComputerAction(agentId, step, signal);
       if (!r.ok) return r;
     }
     return { ok: true };
@@ -28,7 +34,7 @@ async function execComputerAction(agentId: string, action: ComputerAction): Prom
   if (action.type === "screenshot") {
     return { ok: true }; // the caller always captures a fresh screenshot afterwards
   }
-  const res = await computerManager.act(agentId, action);
+  const res = await computerManager.act(agentId, action, signal);
   if (action.type === "cursor_position" && res.cursor) {
     return { ok: res.ok, error: res.error, output: `cursor at (${res.cursor.x}, ${res.cursor.y})` };
   }
@@ -55,7 +61,7 @@ export async function executeInvocation(
   switch (inv.tool) {
     case "computer": {
       try {
-        const result = await execComputerAction(agent.id, inv.action);
+        const result = await execComputerAction(agent.id, inv.action, ctx.signal);
         // settle, then capture the new state
         await new Promise((r) => setTimeout(r, 300));
         const png = await computerManager.screenshot(agent.id);
@@ -74,7 +80,7 @@ export async function executeInvocation(
 
     case "bash": {
       try {
-        const r = await computerManager.exec(agent.id, inv.command, 120);
+        const r = await computerManager.exec(agent.id, inv.command, 120, ctx.signal);
         let screenshotUrl: string | undefined;
         let screenshotB64: string | undefined;
         try {
@@ -229,6 +235,15 @@ export async function executeInvocation(
     case "update_memory": {
       store.addMemory(agent.id, inv.memoryKind, inv.content.slice(0, 1000));
       return { outcome: { id: inv.id, tool: inv.tool, output: "saved to memory" } };
+    }
+
+    case "call_plugin": {
+      try {
+        const output = await callPlugin(inv.pluginId, inv.toolName, inv.arguments ?? {});
+        return { outcome: { id: inv.id, tool: inv.tool, output } };
+      } catch (err) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: (err as Error).message, isError: true } };
+      }
     }
 
     case "request_approval":

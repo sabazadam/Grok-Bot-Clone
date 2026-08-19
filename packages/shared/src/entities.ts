@@ -66,8 +66,18 @@ export interface Conversation {
   title: string;
   /** agent ids participating (user is implicit in direct/group) */
   agentIds: string[];
+  pinned: boolean;
+  pinnedAt?: number;
   createdAt: number;
   lastMessageAt: number;
+}
+
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  url: string;
+  size: number;
 }
 
 export type MessageSender =
@@ -93,6 +103,32 @@ export interface Message {
   screenshotUrl?: string;
   /** agent↔agent thread opened from a "Messaged X" chip (not a sidebar chat) */
   relatedConversationId?: string;
+  attachments?: Attachment[];
+  /** emoji → count (single-user app; toggle on/off) */
+  reactions?: Record<string, number>;
+  createdAt: number;
+}
+
+export interface SearchHit {
+  conversationId: string;
+  conversationTitle: string;
+  messageId: string;
+  text: string;
+  createdAt: number;
+}
+
+export type PluginKind = "mcp" | "webhook";
+
+/** User-configured connector (official Grok Bot Plugins / MCP). */
+export interface Plugin {
+  id: string;
+  name: string;
+  kind: PluginKind;
+  enabled: boolean;
+  command?: string;
+  args: string[];
+  env: Record<string, string>;
+  url?: string;
   createdAt: number;
 }
 

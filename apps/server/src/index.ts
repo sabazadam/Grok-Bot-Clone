@@ -12,7 +12,7 @@ async function main() {
   ensureDataDirs();
   getDb();
 
-  const app = Fastify({ logger: { level: "info" } });
+  const app = Fastify({ logger: { level: "info" }, bodyLimit: 32 * 1024 * 1024 });
   await app.register(cors, { origin: true });
   await app.register(websocket);
 

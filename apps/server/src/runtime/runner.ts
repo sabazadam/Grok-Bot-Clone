@@ -5,7 +5,7 @@
  * back → repeat, with host-side safety gates, live activity events, cancellation,
  * and a step cap. Provider differences live in the model adapters.
  */
-import type { Agent } from "@grokbot/shared";
+import type { Agent, Attachment } from "@grokbot/shared";
 import * as store from "../store.js";
 import { broadcast } from "../bus.js";
 import * as service from "../agents/service.js";
@@ -27,6 +27,7 @@ export interface RunTaskOptions {
   prompt: string;
   rootMessageId: string;
   triggeredBy: { kind: "user" } | { kind: "agent"; agentId: string };
+  attachments?: Attachment[];
 }
 
 function postAgentText(agent: Agent, conversationId: string, text: string, relatedConversationId?: string): void {
@@ -47,7 +48,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   if (!agent || !conversation) return;
 
   const task = store.createTask(agent.id, conversation.id, opts.prompt);
-  const signal = registerTask(task.id);
+  const signal = registerTask(task.id, agent.id);
   service.setStatus(agent.id, "working");
   store.updateTask(task.id, { status: "running" });
   broadcast({ type: "task_updated", task: store.getTask(task.id)! });
@@ -58,9 +59,23 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   try {
     await computerManager.ensureRunning(agent.id);
     await service.syncBrowserConfig(agent.id);
+    if (opts.attachments?.length) {
+      const { hostPathForAttachment } = await import("../uploads.js");
+      for (const att of opts.attachments) {
+        const host = hostPathForAttachment(att);
+        if (host) {
+          try {
+            await computerManager.copyToWorkspace(agent.id, host, att.name);
+          } catch {
+            /* inbox copy is best-effort */
+          }
+        }
+      }
+    }
     const firstShot = await computerManager.screenshot(agent.id);
-
-    const adapter = createAdapter(agent, buildSystemPrompt(agent));
+    const { pluginCatalog } = await import("../plugins/runtime.js");
+    const extras = await pluginCatalog().catch(() => "");
+    const adapter = createAdapter(agent, buildSystemPrompt(agent, extras));
     let decision: AgentDecision = await adapter.start(buildTaskPrompt(agent, conversation, opts), firstShot.toString("base64"));
 
     let stepIndex = 0;
@@ -101,6 +116,13 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         // ── explicit approval request from the model ──
         if (inv.tool === "request_approval") {
           service.setStatus(agent.id, "waiting_approval");
+          broadcast({
+            type: "notice",
+            title: `${agent.name} needs you`,
+            body: inv.description,
+            conversationId: conversation.id,
+            kind: "needs_input",
+          });
           const verdictDecision = await requestApproval({
             taskId: task.id,
             agentId: agent.id,
@@ -127,6 +149,13 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
           : evaluateInvocation(inv);
         if (verdict.needsApproval) {
           service.setStatus(agent.id, "waiting_approval");
+          broadcast({
+            type: "notice",
+            title: `${agent.name} needs you`,
+            body: verdict.reason ?? "Approval required",
+            conversationId: conversation.id,
+            kind: "needs_input",
+          });
           const approvalDecision = await requestApproval({
             taskId: task.id,
             agentId: agent.id,
@@ -162,10 +191,15 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
 
         // ── execute ──
         const { outcome, screenshotUrl } = await executeInvocation(
-          { agent, taskId: task.id, conversationId: conversation.id, rootMessageId: opts.rootMessageId },
+          { agent, taskId: task.id, conversationId: conversation.id, rootMessageId: opts.rootMessageId, signal },
           inv,
           stepIndex,
         );
+        if (signal.aborted) {
+          finalText = "Task cancelled.";
+          store.updateTask(task.id, { status: "cancelled", finishedAt: Date.now() });
+          break loop;
+        }
         outcomes.push(outcome);
 
         const caption = describeInvocation(inv);
@@ -236,5 +270,23 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   }
 
   if (finishedTask) broadcast({ type: "task_updated", task: finishedTask });
+  if (!failed && finishedTask?.status === "done" && finalText && !isAck) {
+    broadcast({
+      type: "notice",
+      title: `${agent.name} finished`,
+      body: finalText.slice(0, 180),
+      conversationId: conversation.id,
+      kind: "done",
+    });
+  }
+  if (finishedTask?.status === "cancelled") {
+    broadcast({
+      type: "notice",
+      title: `${agent.name} stopped`,
+      body: "In-progress work was cancelled.",
+      conversationId: conversation.id,
+      kind: "done",
+    });
+  }
   service.setStatus(agent.id, "idle");
 }

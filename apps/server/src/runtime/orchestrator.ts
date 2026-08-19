@@ -10,11 +10,25 @@ import type { Conversation, Message } from "@grokbot/shared";
 import * as store from "../store.js";
 import { config } from "../config.js";
 import { broadcast } from "../bus.js";
-import { enqueue } from "./queue.js";
+import type { Attachment } from "@grokbot/shared";
+import { enqueue, enqueueAndWait } from "./queue.js";
 import { runAgentTask } from "./runner.js";
 import { extractMentions } from "./dispatch.js";
 import { chooseResponders, composeSkillPrompt, extractSkillInvocation, isStopCommand } from "./dispatch.js";
 import { interruptAgents } from "./interrupt.js";
+
+const dispatchTokens = new Map<string, { cancelled: boolean }>();
+
+export function cancelDispatch(conversationId: string): void {
+  const token = dispatchTokens.get(conversationId);
+  if (token) token.cancelled = true;
+}
+
+function attachmentPrompt(attachments?: Attachment[]): string {
+  if (!attachments?.length) return "";
+  const lines = attachments.map((a) => `- ${a.name} (${a.mime}, ${Math.round(a.size / 1024)} KB)`);
+  return `The user attached files. Copies are in ~/workspace/inbox on your computer:\n${lines.join("\n")}`;
+}
 
 export { extractMentions } from "./dispatch.js";
 
@@ -53,6 +67,8 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
     .map((id) => store.getAgent(id))
     .filter((a): a is NonNullable<typeof a> => !!a);
   if (members.length === 0) return;
+
+  cancelDispatch(conversation.id);
 
   if (isStopCommand(message.text)) {
     interruptAgents(members.map((m) => m.id));
@@ -100,19 +116,36 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
   interruptAgents(targets.map((t) => t.id));
   newTurnBudget(message.id);
 
-  const prompt = skill && invoked ? composeSkillPrompt(skill, invoked.rest) : message.text;
+  const token = { cancelled: false };
+  dispatchTokens.set(conversation.id, token);
 
-  for (const agent of targets) {
-    enqueue(agent.id, () =>
-      runAgentTask({
-        agentId: agent.id,
-        conversationId: conversation.id,
-        prompt,
-        rootMessageId: message.id,
-        triggeredBy: { kind: "user" },
-      }),
-    );
+  const base = skill && invoked ? composeSkillPrompt(skill, invoked.rest) : message.text;
+  const extra = attachmentPrompt(message.attachments);
+  const prompt = extra ? `${base}\n\n${extra}` : base;
+
+  const start = (agentId: string) =>
+    runAgentTask({
+      agentId,
+      conversationId: conversation.id,
+      prompt,
+      rootMessageId: message.id,
+      triggeredBy: { kind: "user" },
+      attachments: message.attachments,
+    });
+
+  if (targets.length <= 1) {
+    for (const agent of targets) enqueue(agent.id, () => start(agent.id));
+    return;
   }
+
+  // Several teammates at once is noisy (they all boot computers). Official
+  // Grok Bot stays quieter: run them one after another unless the user stops.
+  void (async () => {
+    for (const agent of targets) {
+      if (token.cancelled) return;
+      await enqueueAndWait(agent.id, () => start(agent.id));
+    }
+  })();
 }
 
 /**
@@ -188,6 +221,7 @@ export function dispatchAgentMessage(opts: {
 export function stopConversation(conversationId: string): boolean {
   const conv = store.getConversation(conversationId);
   if (!conv) return false;
+  cancelDispatch(conversationId);
   interruptAgents(conv.agentIds);
   postSystem(
     conversationId,

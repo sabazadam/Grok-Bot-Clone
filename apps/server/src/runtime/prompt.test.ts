@@ -55,6 +55,14 @@ describe("system prompt reporting policy", () => {
     expect(prompt).toMatch(/Do not ping them with progress of your own sandbox work/);
     expect(prompt).not.toMatch(/report back to you/);
   });
+
+  it("appends extras such as the plugin catalog", () => {
+    const agent = makeAgent({ name: "Nova" });
+    const prompt = buildSystemPrompt(agent, "## Plugins / connectors\n- Status hook");
+    expect(prompt).toMatch(/call_plugin/);
+    expect(prompt).toMatch(/## Plugins \/ connectors/);
+    expect(prompt).toMatch(/Status hook/);
+  });
 });
 
 describe("task prompt reporting policy", () => {

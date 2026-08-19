@@ -1,4 +1,4 @@
-import type { Agent, AgentStatus, Approval, Conversation, Message, Routine, Skill, Task } from "./entities.js";
+import type { Agent, AgentStatus, Approval, Conversation, Message, Plugin, Routine, Skill, Task } from "./entities.js";
 
 /** WebSocket events pushed from server to UI. */
 export type ServerEvent =
@@ -20,4 +20,7 @@ export type ServerEvent =
   | { type: "skill_updated"; skill: Skill }
   | { type: "skill_deleted"; skillId: string }
   | { type: "routine_updated"; routine: Routine }
-  | { type: "routine_deleted"; routineId: string };
+  | { type: "routine_deleted"; routineId: string }
+  | { type: "plugin_updated"; plugin: Plugin }
+  | { type: "plugin_deleted"; pluginId: string }
+  | { type: "notice"; title: string; body: string; conversationId?: string; kind: "done" | "needs_input" };

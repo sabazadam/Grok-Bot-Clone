@@ -38,6 +38,9 @@ describe("sandbox vs chat", () => {
     expect(shouldPostToolToChat(memory)).toBe(false);
     expect(shouldPostToolToChat(done)).toBe(false);
     expect(shouldPostToolToChat(ask)).toBe(false);
+    expect(
+      shouldPostToolToChat({ id: "p", tool: "call_plugin", pluginId: "hook", toolName: "ping", arguments: {} }),
+    ).toBe(false);
     expect(shouldPostToolToChat(say)).toBe(true);
     expect(shouldPostToolToChat(dm)).toBe(true);
     expect(

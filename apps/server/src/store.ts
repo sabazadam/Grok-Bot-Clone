@@ -12,12 +12,16 @@ import type {
   Message,
   MessageKind,
   MessageSender,
+  Plugin,
+  PluginKind,
   Provider,
   Routine,
   RoutineSchedule,
+  SearchHit,
   Skill,
   Task,
   TaskStatus,
+  Attachment,
 } from "@grokbot/shared";
 import { formatSchedule, intervalMinutesOf, nextRunAt, parseSchedule, withWindowStart } from "@grokbot/shared";
 import { config } from "./config.js";
@@ -50,6 +54,8 @@ function rowToConversation(r: any): Conversation {
     kind: r.kind as ConversationKind,
     title: r.title,
     agentIds: JSON.parse(r.agent_ids),
+    pinned: !!r.pinned,
+    pinnedAt: r.pinned_at ?? undefined,
     createdAt: r.created_at,
     lastMessageAt: r.last_message_at,
   };
@@ -71,8 +77,19 @@ function rowToMessage(r: any): Message {
     approvalId: r.approval_id ?? undefined,
     screenshotUrl: r.screenshot_url ?? undefined,
     relatedConversationId: r.related_conversation_id ?? undefined,
+    attachments: parseJson<Attachment[] | undefined>(r.attachments_json, undefined),
+    reactions: parseJson<Record<string, number> | undefined>(r.reactions_json, undefined),
     createdAt: r.created_at,
   };
+}
+
+function parseJson<T>(raw: unknown, fallback: T): T {
+  if (!raw || typeof raw !== "string") return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 function rowToTask(r: any): Task {
@@ -232,7 +249,23 @@ export function getConversation(id: string): Conversation | undefined {
 }
 
 export function listConversations(): Conversation[] {
-  return getDb().prepare(`SELECT * FROM conversations ORDER BY last_message_at DESC`).all().map(rowToConversation);
+  return getDb()
+    .prepare(`SELECT * FROM conversations`)
+    .all()
+    .map(rowToConversation)
+    .sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      if (a.pinned && b.pinned) return (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0);
+      return b.lastMessageAt - a.lastMessageAt;
+    });
+}
+
+export function setConversationPinned(id: string, pinned: boolean): Conversation | undefined {
+  if (!getConversation(id)) return undefined;
+  getDb()
+    .prepare(`UPDATE conversations SET pinned=?, pinned_at=? WHERE id=?`)
+    .run(pinned ? 1 : 0, pinned ? Date.now() : null, id);
+  return getConversation(id);
 }
 
 /** The 1:1 user<->agent conversation (created on agent creation). */
@@ -295,6 +328,8 @@ export interface NewMessage {
   approvalId?: string;
   screenshotUrl?: string;
   relatedConversationId?: string;
+  attachments?: Attachment[];
+  reactions?: Record<string, number>;
 }
 
 export function addMessage(m: NewMessage): Message {
@@ -302,8 +337,8 @@ export function addMessage(m: NewMessage): Message {
   const now = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO messages (id, conversation_id, sender_kind, sender_agent_id, kind, text, approval_id, screenshot_url, related_conversation_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, sender_kind, sender_agent_id, kind, text, approval_id, screenshot_url, related_conversation_id, attachments_json, reactions_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -315,6 +350,8 @@ export function addMessage(m: NewMessage): Message {
       m.approvalId ?? null,
       m.screenshotUrl ?? null,
       m.relatedConversationId ?? null,
+      m.attachments?.length ? JSON.stringify(m.attachments) : null,
+      m.reactions && Object.keys(m.reactions).length ? JSON.stringify(m.reactions) : null,
       now,
     );
   getDb().prepare(`UPDATE conversations SET last_message_at=? WHERE id=?`).run(now, m.conversationId);
@@ -327,6 +364,51 @@ export function listMessages(conversationId: string, limit = 500): Message[] {
     .prepare(`SELECT * FROM messages WHERE conversation_id=? ORDER BY created_at ASC LIMIT ?`)
     .all(conversationId, limit)
     .map(rowToMessage);
+}
+
+export function getMessage(id: string): Message | undefined {
+  const r = getDb().prepare(`SELECT * FROM messages WHERE id=?`).get(id);
+  return r ? rowToMessage(r) : undefined;
+}
+
+export function toggleMessageReaction(id: string, emoji: string): Message | undefined {
+  const msg = getMessage(id);
+  if (!msg) return undefined;
+  const reactions = { ...(msg.reactions ?? {}) };
+  if (reactions[emoji]) delete reactions[emoji];
+  else reactions[emoji] = 1;
+  getDb()
+    .prepare(`UPDATE messages SET reactions_json=? WHERE id=?`)
+    .run(Object.keys(reactions).length ? JSON.stringify(reactions) : null, id);
+  return getMessage(id);
+}
+
+export function searchMessages(query: string, limit = 40): SearchHit[] {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const like = `%${q.replace(/[%_]/g, "\\$&")}%`;
+  const rows = getDb()
+    .prepare(
+      `SELECT m.id as message_id, m.text as text, m.created_at as created_at, m.conversation_id as conversation_id, c.title as title, c.kind as kind
+       FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.text LIKE ? ESCAPE '\\' AND c.kind != 'agent_dm'
+       ORDER BY m.created_at DESC LIMIT ?`,
+    )
+    .all(like, limit) as {
+    message_id: string;
+    text: string;
+    created_at: number;
+    conversation_id: string;
+    title: string;
+    kind: string;
+  }[];
+  return rows.map((r) => ({
+    conversationId: r.conversation_id,
+    conversationTitle: r.title,
+    messageId: r.message_id,
+    text: r.text,
+    createdAt: r.created_at,
+  }));
 }
 
 // ── tasks & steps ───────────────────────────────────────────────────────
@@ -703,4 +785,77 @@ export function markRoutineRan(id: string, status: "ok" | "failed" | "running"):
     lastStatus: status,
     nextRunAt: nextRunAt(schedule, now, cur.timezone || config.browserTimezone),
   });
+}
+
+// ── plugins / connectors ────────────────────────────────────────────────
+
+function rowToPlugin(r: any): Plugin {
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind as PluginKind,
+    enabled: !!r.enabled,
+    command: r.command ?? undefined,
+    args: parseJson<string[]>(r.args_json, []),
+    env: parseJson<Record<string, string>>(r.env_json, {}),
+    url: r.url ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+export function createPlugin(input: {
+  name: string;
+  kind: PluginKind;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}): Plugin {
+  const id = nanoid(10);
+  getDb()
+    .prepare(
+      `INSERT INTO plugins (id, name, kind, enabled, command, args_json, env_json, url, created_at)
+       VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.name.trim(),
+      input.kind,
+      input.command?.trim() || null,
+      JSON.stringify(input.args ?? []),
+      JSON.stringify(input.env ?? {}),
+      input.url?.trim() || null,
+      Date.now(),
+    );
+  return getPlugin(id)!;
+}
+
+export function getPlugin(id: string): Plugin | undefined {
+  const r = getDb().prepare(`SELECT * FROM plugins WHERE id=?`).get(id);
+  return r ? rowToPlugin(r) : undefined;
+}
+
+export function listPlugins(): Plugin[] {
+  return getDb().prepare(`SELECT * FROM plugins ORDER BY created_at ASC`).all().map(rowToPlugin);
+}
+
+export function updatePlugin(id: string, patch: Partial<Pick<Plugin, "name" | "enabled" | "command" | "args" | "env" | "url">>): Plugin | undefined {
+  const cur = getPlugin(id);
+  if (!cur) return undefined;
+  getDb()
+    .prepare(`UPDATE plugins SET name=?, enabled=?, command=?, args_json=?, env_json=?, url=? WHERE id=?`)
+    .run(
+      patch.name ?? cur.name,
+      (patch.enabled ?? cur.enabled) ? 1 : 0,
+      (patch.command ?? cur.command) || null,
+      JSON.stringify(patch.args ?? cur.args),
+      JSON.stringify(patch.env ?? cur.env),
+      (patch.url ?? cur.url) || null,
+      id,
+    );
+  return getPlugin(id);
+}
+
+export function deletePlugin(id: string): void {
+  getDb().prepare(`DELETE FROM plugins WHERE id=?`).run(id);
 }

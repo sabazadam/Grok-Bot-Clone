@@ -85,5 +85,7 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Save to memory: ${inv.content}`;
     case "task_complete":
       return `Finish task: ${inv.summary}`;
+    case "call_plugin":
+      return `Call plugin ${inv.pluginId}.${inv.toolName}`;
   }
 }

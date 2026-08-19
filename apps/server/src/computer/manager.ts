@@ -8,6 +8,7 @@
  *     with dynamically assigned host ports
  */
 import Docker from "dockerode";
+import { spawn } from "node:child_process";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ComputerAction, ComputerInfo } from "@grokbot/shared";
 import { config } from "../config.js";
@@ -231,14 +232,14 @@ export class ComputerManager {
     return Buffer.from(await res.arrayBuffer());
   }
 
-  async act(agentId: string, action: ComputerAction): Promise<ActionResponse> {
+  async act(agentId: string, action: ComputerAction, signal?: AbortSignal): Promise<ActionResponse> {
     const port = await this.actuatorPort(agentId);
     this.touch(agentId);
     const res = await fetch(`http://127.0.0.1:${port}/action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(action),
-      signal: AbortSignal.timeout(60_000),
+      signal: combineSignals(AbortSignal.timeout(60_000), signal),
     });
     return (await res.json()) as ActionResponse;
   }
@@ -267,16 +268,37 @@ export class ComputerManager {
     }
   }
 
-  async exec(agentId: string, cmd: string, timeoutSec = 60): Promise<ExecResult> {
+  async exec(agentId: string, cmd: string, timeoutSec = 60, signal?: AbortSignal): Promise<ExecResult> {
     const port = await this.actuatorPort(agentId);
     this.touch(agentId);
     const res = await fetch(`http://127.0.0.1:${port}/exec`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cmd, timeoutSec }),
-      signal: AbortSignal.timeout((timeoutSec + 15) * 1000),
+      signal: combineSignals(AbortSignal.timeout((timeoutSec + 15) * 1000), signal),
     });
     return (await res.json()) as ExecResult;
+  }
+
+  async copyToWorkspace(agentId: string, hostFile: string, destName: string): Promise<void> {
+    const safe = destName.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80) || "file";
+    await this.exec(agentId, "mkdir -p /home/agent/workspace/inbox", 10);
+    const dest = `${this.containerName(agentId)}:/home/agent/workspace/inbox/${safe}`;
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("docker", ["cp", hostFile, dest]);
+      child.on("error", reject);
+      child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker cp failed (${code})`))));
+    });
+  }
+
+  /** Kill the in-container exec/action that Stop now interrupted. */
+  async abortExec(agentId: string): Promise<void> {
+    try {
+      const port = await this.actuatorPort(agentId);
+      await fetch(`http://127.0.0.1:${port}/abort`, { method: "POST", signal: AbortSignal.timeout(3000) });
+    } catch {
+      /* computer may be off, or the image may predate /abort */
+    }
   }
 
   /** Stop computers idle for longer than the configured threshold. Returns stopped agent ids. */
@@ -300,3 +322,20 @@ export class ComputerManager {
 }
 
 export const computerManager = new ComputerManager();
+
+function combineSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
+  const live = signals.filter((s): s is AbortSignal => !!s);
+  if (live.length === 0) return AbortSignal.timeout(60_000);
+  if (live.length === 1) return live[0]!;
+  const any = (AbortSignal as unknown as { any?: (s: AbortSignal[]) => AbortSignal }).any;
+  if (typeof any === "function") return any(live);
+  const c = new AbortController();
+  for (const s of live) {
+    if (s.aborted) {
+      c.abort();
+      break;
+    }
+    s.addEventListener("abort", () => c.abort(), { once: true });
+  }
+  return c.signal;
+}

@@ -4,7 +4,7 @@
  * at a time"); additional work is queued FIFO. Different agents run in parallel.
  */
 
-type Job = () => Promise<void>;
+type Job = (() => Promise<void>) & { onDrop?: () => void };
 
 const queues = new Map<string, { running: boolean; jobs: Job[] }>();
 
@@ -16,6 +16,22 @@ export function enqueue(agentId: string, job: Job): void {
   }
   q.jobs.push(job);
   if (!q.running) void drain(agentId);
+}
+
+/** Run a job on an agent's queue and wait until it finishes (or the queue is cleared). */
+export function enqueueAndWait(agentId: string, job: Job): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const wrapped: Job = async () => {
+      try {
+        await job();
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    };
+    wrapped.onDrop = () => resolve();
+    enqueue(agentId, wrapped);
+  });
 }
 
 async function drain(agentId: string): Promise<void> {
@@ -43,6 +59,7 @@ export function clearPending(agentId: string): number {
   const q = queues.get(agentId);
   if (!q) return 0;
   const n = q.jobs.length;
+  for (const job of q.jobs) job.onDrop?.();
   q.jobs = [];
   return n;
 }

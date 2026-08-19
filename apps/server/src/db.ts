@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   kind TEXT NOT NULL,
   title TEXT NOT NULL,
   agent_ids TEXT NOT NULL DEFAULT '[]',
+  pinned INTEGER NOT NULL DEFAULT 0,
+  pinned_at INTEGER,
   created_at INTEGER NOT NULL,
   last_message_at INTEGER NOT NULL
 );
@@ -39,6 +41,8 @@ CREATE TABLE IF NOT EXISTS messages (
   approval_id TEXT,
   screenshot_url TEXT,
   related_conversation_id TEXT,
+  attachments_json TEXT,
+  reactions_json TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
@@ -110,6 +114,17 @@ CREATE TABLE IF NOT EXISTS routines (
   last_status TEXT,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS plugins (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  command TEXT,
+  args_json TEXT NOT NULL DEFAULT '[]',
+  env_json TEXT NOT NULL DEFAULT '{}',
+  url TEXT,
+  created_at INTEGER NOT NULL
+);
 `;
 
 let db: Database.Database | null = null;
@@ -151,6 +166,19 @@ function migrate(d: Database.Database): void {
   const msgCols = new Set((d.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]).map((c) => c.name));
   if (msgCols.size > 0 && !msgCols.has("related_conversation_id")) {
     d.exec(`ALTER TABLE messages ADD COLUMN related_conversation_id TEXT`);
+  }
+  if (msgCols.size > 0 && !msgCols.has("attachments_json")) {
+    d.exec(`ALTER TABLE messages ADD COLUMN attachments_json TEXT`);
+  }
+  if (msgCols.size > 0 && !msgCols.has("reactions_json")) {
+    d.exec(`ALTER TABLE messages ADD COLUMN reactions_json TEXT`);
+  }
+  const convCols = new Set((d.prepare(`PRAGMA table_info(conversations)`).all() as { name: string }[]).map((c) => c.name));
+  if (convCols.size > 0 && !convCols.has("pinned")) {
+    d.exec(`ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (convCols.size > 0 && !convCols.has("pinned_at")) {
+    d.exec(`ALTER TABLE conversations ADD COLUMN pinned_at INTEGER`);
   }
 }
 

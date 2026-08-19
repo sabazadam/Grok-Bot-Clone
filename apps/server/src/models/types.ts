@@ -11,7 +11,8 @@ export type ToolInvocation =
   | { id: string; tool: "save_skill"; name: string; description: string; instructions: string }
   | { id: string; tool: "create_agent"; name: string; roleTitle: string; instructions: string; isTeamLead?: boolean }
   | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes?: number; schedule?: string; skillName?: string }
-  | { id: string; tool: "task_complete"; summary: string };
+  | { id: string; tool: "task_complete"; summary: string }
+  | { id: string; tool: "call_plugin"; pluginId: string; toolName: string; arguments: Record<string, unknown> };
 
 export interface ToolOutcome {
   id: string;
@@ -112,5 +113,7 @@ export function describeInvocation(inv: ToolInvocation): string {
       return "Asked for your approval";
     case "task_complete":
       return "Finished the task";
+    case "call_plugin":
+      return `Called plugin ${inv.pluginId}.${inv.toolName}`;
   }
 }

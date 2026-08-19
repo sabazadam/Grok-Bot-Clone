@@ -106,4 +106,69 @@ describe("agent store", () => {
     expect(store.setAgentHidden(a.id, true)!.hidden).toBe(true);
     expect(store.setAgentHidden(a.id, false)!.hidden).toBe(false);
   });
+
+  it("pins conversations above recents", () => {
+    const a = makeAgent({ name: "Alpha" });
+    const b = makeAgent({ name: "Beta" });
+    const ca = store.ensureDirectConversation(a.id);
+    const cb = store.ensureDirectConversation(b.id);
+    store.addMessage({ conversationId: ca.id, sender: { kind: "user" }, kind: "text", text: "older" });
+    store.addMessage({ conversationId: cb.id, sender: { kind: "user" }, kind: "text", text: "newer" });
+    const pinned = store.setConversationPinned(ca.id, true)!;
+    expect(pinned.pinned).toBe(true);
+    expect(store.listConversations()[0]!.id).toBe(ca.id);
+    store.setConversationPinned(ca.id, false);
+    store.setConversationPinned(cb.id, true);
+    expect(store.listConversations()[0]!.id).toBe(cb.id);
+  });
+
+  it("stores attachments and toggles reactions", () => {
+    const a = makeAgent({ name: "Piper" });
+    const conv = store.ensureDirectConversation(a.id);
+    const msg = store.addMessage({
+      conversationId: conv.id,
+      sender: { kind: "user" },
+      kind: "text",
+      text: "see this",
+      attachments: [{ id: "att1", name: "brief.pdf", mime: "application/pdf", url: "/uploads/att1_brief.pdf", size: 1200 }],
+    });
+    expect(store.getMessage(msg.id)?.attachments?.[0]?.name).toBe("brief.pdf");
+    expect(store.toggleMessageReaction(msg.id, "👍")?.reactions).toEqual({ "👍": 1 });
+    expect(store.toggleMessageReaction(msg.id, "👍")?.reactions).toBeUndefined();
+  });
+
+  it("searches user-visible messages and skips agent DMs", () => {
+    const lead = makeAgent({ name: "Lead" });
+    const worker = makeAgent({ name: "Worker" });
+    const direct = store.ensureDirectConversation(lead.id);
+    const dm = store.ensureAgentDm(lead.id, worker.id);
+    store.addMessage({
+      conversationId: direct.id,
+      sender: { kind: "user" },
+      kind: "text",
+      text: "quarterly revenue report please",
+    });
+    store.addMessage({
+      conversationId: dm.id,
+      sender: { kind: "agent", agentId: lead.id },
+      kind: "text",
+      text: "quarterly revenue secret",
+    });
+    const hits = store.searchMessages("revenue");
+    expect(hits).toHaveLength(1);
+    expect(hits[0]?.conversationId).toBe(direct.id);
+    expect(store.searchMessages("x")).toEqual([]);
+  });
+
+  it("persists plugins", () => {
+    const plugin = store.createPlugin({
+      name: "Status hook",
+      kind: "webhook",
+      url: "https://example.test/hook",
+    });
+    expect(store.listPlugins()).toHaveLength(1);
+    expect(store.updatePlugin(plugin.id, { enabled: false })?.enabled).toBe(false);
+    store.deletePlugin(plugin.id);
+    expect(store.listPlugins()).toHaveLength(0);
+  });
 });

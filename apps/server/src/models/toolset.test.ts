@@ -9,6 +9,7 @@ describe("customTools", () => {
     expect(names).toContain("create_agent");
     expect(names).toContain("create_routine");
     expect(names).toContain("task_complete");
+    expect(names).toContain("call_plugin");
     expect(names).not.toContain("send_message_to_agent");
     expect(customTools(true).map((t) => t.name)).toContain("send_message_to_agent");
   });
@@ -18,6 +19,22 @@ describe("customTools", () => {
       id: "1",
       tool: "send_message",
       text: "Need takeover for 2FA.",
+    });
+  });
+
+  it("parses call_plugin", () => {
+    expect(
+      parseCustomToolCall("9", "call_plugin", {
+        pluginId: "hook1",
+        toolName: "search",
+        arguments: { q: "inbox" },
+      }),
+    ).toEqual({
+      id: "9",
+      tool: "call_plugin",
+      pluginId: "hook1",
+      toolName: "search",
+      arguments: { q: "inbox" },
     });
   });
 });
