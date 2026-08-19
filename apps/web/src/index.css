@@ -267,3 +267,16 @@ body {
 :root[data-theme="dark"] .gb-input {
   background: #1a1a1c;
 }
+
+.gb-highlight {
+  outline: 2px solid color-mix(in srgb, #3b82f6 55%, transparent);
+  outline-offset: 3px;
+  border-radius: 16px;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

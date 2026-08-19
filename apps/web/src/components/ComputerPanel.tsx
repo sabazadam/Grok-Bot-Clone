@@ -9,10 +9,18 @@ import { Avatar, STATUS_LABELS } from "./Avatar";
  * View-only by default; "Take over" enables input passthrough so the user can
  * type passwords/2FA directly (the agent pauses while you drive).
  */
-export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: () => void }) {
+export function ComputerPanel({
+  agents,
+  onClose,
+  forceTakeover = false,
+}: {
+  agents: Agent[];
+  onClose: () => void;
+  forceTakeover?: boolean;
+}) {
   const { state, refreshAgents } = useStore();
   const [activeId, setActiveId] = useState(agents[0]?.id ?? null);
-  const [takeover, setTakeover] = useState(false);
+  const [takeover, setTakeover] = useState(forceTakeover);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -20,11 +28,15 @@ export function ComputerPanel({ agents, onClose }: { agents: Agent[]; onClose: (
   }, [agents, activeId]);
 
   useEffect(() => {
-    setTakeover(false);
+    setTakeover(forceTakeover);
     return () => {
-      if (activeId) void api.setTakeover(activeId, false).catch(() => undefined);
+      if (activeId && !forceTakeover) void api.setTakeover(activeId, false).catch(() => undefined);
     };
-  }, [activeId]);
+  }, [activeId, forceTakeover]);
+
+  useEffect(() => {
+    if (forceTakeover) setTakeover(true);
+  }, [forceTakeover]);
 
   const active = state.agents.find((a) => a.id === activeId);
   const computer = active?.computer;

@@ -5,7 +5,17 @@ import { api } from "../api";
 import { useStore } from "../store";
 import { Avatar, STATUS_LABELS } from "./Avatar";
 
-export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClose: () => void; onEdit: () => void }) {
+export function ProfileDrawer({
+  agent,
+  onClose,
+  onEdit,
+  onTeach,
+}: {
+  agent: Agent;
+  onClose: () => void;
+  onEdit: () => void;
+  onTeach: () => void;
+}) {
   const { refreshAgents, selectConversation } = useStore();
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [skills, setSkills] = useState<(Skill & { enabled: boolean })[]>([]);
@@ -260,6 +270,13 @@ export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClos
         </div>
 
         <div className="mt-auto space-y-2">
+          <button
+            onClick={onTeach}
+            className="w-full rounded-full px-4 py-2 text-sm"
+            style={{ border: "1px solid var(--border)", color: "var(--text)" }}
+          >
+            Teach a task
+          </button>
           <button onClick={onEdit} className="w-full rounded-full px-4 py-2 text-sm" style={{ border: "1px solid var(--border)", color: "var(--text)" }}>
             Edit profile
           </button>

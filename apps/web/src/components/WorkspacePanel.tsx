@@ -11,11 +11,13 @@ export function WorkspacePanel({
   agent,
   onExpandComputer,
   onCreateRoutine,
+  onTeach,
   onCollapse,
 }: {
   agent: Agent;
   onExpandComputer: () => void;
   onCreateRoutine: () => void;
+  onTeach: () => void;
   onCollapse: () => void;
 }) {
   const { state } = useStore();
@@ -74,6 +76,13 @@ export function WorkspacePanel({
           style={{ background: "var(--surface)", color: "var(--text)" }}
         >
           Create Routine
+        </button>
+        <button
+          onClick={onTeach}
+          className="mt-2 rounded-full px-4 py-2 text-[13px] font-medium"
+          style={{ background: "var(--surface)", color: "var(--text)" }}
+        >
+          Teach a task
         </button>
         {routines.length > 0 && (
           <div className="mt-5 w-full space-y-2 text-left">

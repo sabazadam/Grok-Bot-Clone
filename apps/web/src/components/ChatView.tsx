@@ -1,9 +1,50 @@
 import { useEffect, useRef, useState } from "react";
-import type { Agent, Conversation, Message } from "@grokbot/shared";
-import { api } from "../api";
+import type { Agent, Attachment, Conversation, Message } from "@grokbot/shared";
+import { api, type IncomingAttachment } from "../api";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
 import { dayStamp, handoffPeerName, handoffVerb, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
+
+const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
+
+function readAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const s = String(reader.result ?? "");
+      const i = s.indexOf(",");
+      resolve(i >= 0 ? s.slice(i + 1) : s);
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("read failed"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function AttachmentList({ attachments }: { attachments: Attachment[] }) {
+  return (
+    <div className="mt-2 space-y-1.5">
+      {attachments.map((a) =>
+        a.mime.startsWith("image/") ? (
+          <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+            <img src={a.url} alt={a.name} className="max-h-56 max-w-[360px] rounded-xl" />
+          </a>
+        ) : (
+          <a
+            key={a.id}
+            href={a.url}
+            download={a.name}
+            className="flex items-center gap-2 rounded-xl px-3 py-2 text-[13px]"
+            style={{ background: "var(--bg)", border: "1px solid var(--border)" }}
+          >
+            <span aria-hidden>📎</span>
+            <span className="truncate font-medium">{a.name}</span>
+            <span style={{ color: "var(--muted)" }}>{Math.max(1, Math.round(a.size / 1024))} KB</span>
+          </a>
+        ),
+      )}
+    </div>
+  );
+}
 
 function GearIcon() {
   return (
@@ -111,10 +152,12 @@ function HandoffChip({
 function Bubble({
   message,
   agent,
+  highlight,
   onOpenHandoff,
 }: {
   message: Message;
   agent?: Agent;
+  highlight?: boolean;
   onOpenHandoff: (conversationId: string) => void;
 }) {
   const { state } = useStore();
@@ -197,8 +240,9 @@ function Bubble({
   }
 
   const isUser = message.sender.kind === "user";
+  const reactions = Object.entries(message.reactions ?? {}).filter(([, n]) => n > 0);
   return (
-    <div className="my-2.5">
+    <div id={`msg-${message.id}`} className={`group my-2.5 ${highlight ? "gb-highlight" : ""}`}>
       {!isUser && agent && (
         <div className="mb-1 flex items-center gap-2">
           <Avatar agent={agent} size={18} />
@@ -217,8 +261,34 @@ function Bubble({
         style={{ background: "var(--bubble)", color: "var(--bubble-text)" }}
       >
         {message.text}
+        {message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
       </div>
       {message.screenshotUrl && <img src={message.screenshotUrl} alt="" className="mt-2 max-h-56 max-w-[360px] rounded-xl" />}
+      <div className="mt-1 flex flex-wrap items-center gap-1">
+        {reactions.map(([emoji, count]) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => void api.react(message.id, emoji)}
+            className="rounded-full px-1.5 py-0.5 text-[12px]"
+            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+          >
+            {emoji} {count}
+          </button>
+        ))}
+        {REACTIONS.filter((emoji) => !reactions.some(([e]) => e === emoji)).map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            title={`React ${emoji}`}
+            onClick={() => void api.react(message.id, emoji)}
+            className="grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-40 hover:opacity-100"
+            style={{ background: "var(--surface)" }}
+          >
+            {emoji}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -226,6 +296,7 @@ function Bubble({
 export function ChatView({
   conversation,
   lastSeenId,
+  highlightMessageId,
   onOpenHandoff,
   onOpenComputer,
   onOpenSettings,
@@ -234,16 +305,19 @@ export function ChatView({
 }: {
   conversation: Conversation;
   lastSeenId?: string;
+  highlightMessageId?: string;
   onOpenHandoff: (conversationId: string) => void;
   onOpenComputer: () => void;
   onOpenSettings: () => void;
   railOpen: boolean;
   onToggleRail: () => void;
 }) {
-  const { state } = useStore();
+  const { state, refreshConversations } = useStore();
   const [draft, setDraft] = useState("");
+  const [pending, setPending] = useState<IncomingAttachment[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const messages = state.messages[conversation.id] ?? [];
   const agentById = new Map(state.agents.map((a) => [a.id, a]));
@@ -273,16 +347,41 @@ export function ChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, state.liveSteps]);
 
+  useEffect(() => {
+    if (!highlightMessageId) return;
+    document.getElementById(`msg-${highlightMessageId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightMessageId, messages.length]);
+
+  async function addFiles(files: FileList | File[] | null) {
+    if (!files) return;
+    const next: IncomingAttachment[] = [];
+    for (const file of Array.from(files).slice(0, 4 - pending.length)) {
+      if (file.size > 6 * 1024 * 1024) {
+        setSendError(`${file.name} is over 6 MB`);
+        continue;
+      }
+      next.push({
+        name: file.name,
+        mime: file.type || "application/octet-stream",
+        dataBase64: await readAsBase64(file),
+      });
+    }
+    if (next.length) setPending((cur) => [...cur, ...next].slice(0, 4));
+  }
+
   async function send() {
     const text = draft.trim();
-    if (!text) return;
+    if (!text && pending.length === 0) return;
+    const attachments = pending;
     setDraft("");
+    setPending([]);
     setSendError(null);
     try {
-      await api.sendMessage(conversation.id, text);
+      await api.sendMessage(conversation.id, text, attachments.length ? attachments : undefined);
     } catch (err) {
       setSendError((err as Error).message);
       setDraft(text);
+      setPending(attachments);
     }
   }
 
@@ -301,6 +400,17 @@ export function ChatView({
             Stop
           </button>
         )}
+        <button
+          onClick={async () => {
+            await api.pinConversation(conversation.id, !conversation.pinned);
+            await refreshConversations();
+          }}
+          className="grid h-8 w-8 place-items-center text-[14px]"
+          style={{ color: conversation.pinned ? "var(--wait)" : "var(--muted)" }}
+          title={conversation.pinned ? "Unpin" : "Pin"}
+        >
+          {conversation.pinned ? "📌" : "📍"}
+        </button>
         <button
           onClick={onOpenSettings}
           className="grid h-8 w-8 place-items-center"
@@ -344,6 +454,7 @@ export function ChatView({
             <Bubble
               message={m}
               agent={m.sender.kind === "agent" ? agentById.get(m.sender.agentId) : undefined}
+              highlight={m.id === highlightMessageId}
               onOpenHandoff={onOpenHandoff}
             />
           </div>
@@ -370,6 +481,22 @@ export function ChatView({
             {sendError}
           </p>
         )}
+        {pending.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5 px-1">
+            {pending.map((f, i) => (
+              <span
+                key={`${f.name}-${i}`}
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-[12px]"
+                style={{ background: "var(--surface)" }}
+              >
+                {f.name}
+                <button type="button" onClick={() => setPending((cur) => cur.filter((_, j) => j !== i))} aria-label="Remove">
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
         <div className="relative">
           {skillHits.length > 0 && (
             <div
@@ -393,12 +520,30 @@ export function ChatView({
               ))}
             </div>
           )}
-          <div className="gb-input flex items-end gap-2 px-2 py-1.5">
+          <div
+            className="gb-input flex items-end gap-2 px-2 py-1.5"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              void addFiles(e.dataTransfer.files);
+            }}
+          >
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                void addFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
             <button
               type="button"
+              onClick={() => fileRef.current?.click()}
               className="grid h-8 w-8 place-items-center rounded-full text-[20px] leading-none"
               style={{ color: "var(--muted)" }}
-              title="Attach (coming soon)"
+              title="Attach files"
             >
               +
             </button>
@@ -416,7 +561,7 @@ export function ChatView({
               className="max-h-28 flex-1 resize-none bg-transparent py-1.5 text-[15px] outline-none"
               style={{ color: "var(--text)" }}
             />
-            {draft.trim() ? (
+            {draft.trim() || pending.length ? (
               <button
                 onClick={() => void send()}
                 className="grid h-8 w-8 place-items-center rounded-full text-white"

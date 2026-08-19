@@ -10,6 +10,8 @@ import { ProfileDrawer } from "./components/ProfileDrawer";
 import { EmptyState } from "./components/EmptyState";
 import { AgentDmView } from "./components/AgentDmView";
 import { WorkspacePanel } from "./components/WorkspacePanel";
+import { PluginsModal } from "./components/PluginsModal";
+import { TeachModal } from "./components/TeachModal";
 
 const LAST_SEEN_KEY = "grokbot.lastSeen";
 
@@ -26,15 +28,18 @@ function writeLastSeen(map: Record<string, string>) {
 }
 
 function Shell() {
-  const { state, selectConversation, loadMessages, refreshConversations } = useStore();
+  const { state, dispatch, selectConversation, loadMessages, refreshConversations } = useStore();
   const theme = useTheme();
   const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showComputer, setShowComputer] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [editAgent, setEditAgent] = useState(false);
+  const [showPlugins, setShowPlugins] = useState(false);
+  const [showTeach, setShowTeach] = useState(false);
   const [railOpen, setRailOpen] = useState(true);
   const [handoffId, setHandoffId] = useState<string | null>(null);
+  const [highlightId, setHighlightId] = useState<string | undefined>();
   const [lastSeen, setLastSeen] = useState<Record<string, string>>(readLastSeen);
 
   const conversation = state.conversations.find((c) => c.id === state.selectedId);
@@ -67,12 +72,13 @@ function Shell() {
     writeLastSeen(next);
   };
 
-  const navigate = (id: string | null) => {
+  const navigate = (id: string | null, highlightMessageId?: string) => {
     if (state.selectedId && state.selectedId !== id) markSeen(state.selectedId);
     setHandoffId(null);
     setShowComputer(false);
     setShowProfile(false);
     setEditAgent(false);
+    setHighlightId(highlightMessageId);
     selectConversation(id);
   };
 
@@ -93,11 +99,35 @@ function Shell() {
     return () => clearInterval(id);
   }, [handoffId, loadMessages]);
 
+  useEffect(() => {
+    const notice = state.lastNotice;
+    if (!notice) return;
+    if (typeof Notification !== "undefined" && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const n = new Notification(notice.title, { body: notice.body });
+      n.onclick = () => {
+        if (notice.conversationId) navigate(notice.conversationId);
+      };
+    }
+    const t = setTimeout(() => dispatch({ type: "clear_notice" }), 7000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.lastNotice?.at]);
+
   const showRail = Boolean(hostAgent) && railOpen;
+  const notice = state.lastNotice;
 
   return (
     <div className="app-shell">
-      <Sidebar theme={theme} onNewAgent={() => setShowNewAgent(true)} onNewGroup={() => setShowNewGroup(true)} onNavigate={navigate} />
+      <Sidebar
+        theme={theme}
+        onNewAgent={() => setShowNewAgent(true)}
+        onNewGroup={() => setShowNewGroup(true)}
+        onPlugins={() => setShowPlugins(true)}
+        onNavigate={navigate}
+      />
       <main className="flex min-w-0 flex-1 flex-col">
         {setupWarning && (
           <div
@@ -111,6 +141,28 @@ function Shell() {
             {setupWarning}
           </div>
         )}
+        {notice && (
+          <button
+            type="button"
+            onClick={() => {
+              if (notice.conversationId) navigate(notice.conversationId);
+              dispatch({ type: "clear_notice" });
+            }}
+            className="px-4 py-2 text-left text-[13px]"
+            style={{
+              background:
+                notice.kind === "needs_input"
+                  ? "color-mix(in srgb, var(--wait) 14%, var(--bg))"
+                  : "color-mix(in srgb, var(--ok) 12%, var(--bg))",
+              borderBottom: "1px solid var(--hairline)",
+            }}
+          >
+            <span className="font-semibold">{notice.title}</span>
+            <span className="ml-2" style={{ color: "var(--muted)" }}>
+              {notice.body}
+            </span>
+          </button>
+        )}
         <div className="flex min-h-0 flex-1">
           {!conversation ? (
             <EmptyState onNewAgent={() => setShowNewAgent(true)} />
@@ -120,6 +172,7 @@ function Shell() {
             <ChatView
               conversation={conversation}
               lastSeenId={lastSeen[conversation.id]}
+              highlightMessageId={highlightId}
               onOpenHandoff={(id) => void openHandoff(id)}
               onOpenComputer={() => {
                 setShowComputer(true);
@@ -132,12 +185,17 @@ function Shell() {
           )}
           {showRail && hostAgent ? (
             showComputer ? (
-              <ComputerPanel agents={[hostAgent]} onClose={() => setShowComputer(false)} />
+              <ComputerPanel
+                agents={[hostAgent]}
+                forceTakeover={showTeach}
+                onClose={() => setShowComputer(false)}
+              />
             ) : (
               <WorkspacePanel
                 agent={hostAgent}
                 onExpandComputer={() => setShowComputer(true)}
                 onCreateRoutine={() => setShowProfile(true)}
+                onTeach={() => setShowTeach(true)}
                 onCollapse={() => setRailOpen(false)}
               />
             )
@@ -147,8 +205,24 @@ function Shell() {
 
       {showNewAgent && <AgentModal onClose={() => setShowNewAgent(false)} />}
       {showNewGroup && <GroupModal onClose={() => setShowNewGroup(false)} />}
+      {showPlugins && <PluginsModal onClose={() => setShowPlugins(false)} />}
+      {showTeach && hostAgent && (
+        <TeachModal
+          agent={hostAgent}
+          onClose={() => setShowTeach(false)}
+          onOpenComputer={() => {
+            setShowComputer(true);
+            setRailOpen(true);
+          }}
+        />
+      )}
       {showProfile && hostAgent && !editAgent && (
-        <ProfileDrawer agent={hostAgent} onClose={() => setShowProfile(false)} onEdit={() => setEditAgent(true)} />
+        <ProfileDrawer
+          agent={hostAgent}
+          onClose={() => setShowProfile(false)}
+          onEdit={() => setEditAgent(true)}
+          onTeach={() => setShowTeach(true)}
+        />
       )}
       {editAgent && hostAgent && (
         <AgentModal

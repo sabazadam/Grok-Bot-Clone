@@ -26,6 +26,10 @@ your own machine (built for an Apple Silicon Mac mini).
   VM/fingerprint tells. Toggle it per agent; it applies live (no restart).
 - **Grok Bot–style UI** — light iMessage look by default with a one-click dark theme, color-coded
   agents, duplicate / hide-from-sidebar, and a friendly onboarding state.
+- **Attachments, pin, search, reactions, plugins, teach** — attach files to a chat (copied into the
+  agent's `~/workspace/inbox`), pin teammates, search messages, react with emoji, add MCP/webhook
+  plugins, and teach a skill by demonstrating it on the agent's computer. Desktop notices fire when
+  a teammate finishes or needs you.
 - **Native macOS desktop app** (Electron) — run the server locally or connect to your Mac mini as a
   "commander"; see [Desktop app](#desktop-app-macos).
 - **Multi-model** — pick a provider per agent:
@@ -54,7 +58,8 @@ npm run dev
 
 - Mark one agent **Team lead** so unmentioned group messages go to them; they delegate with `@Name` or `send_message_to_agent`. `@everyone` wakes the whole group.
 - Save a **skill** in Profile (or ask the agent to `save_skill`). Type `/Skill name` in chat to run it. Enable per agent.
-- Add a **routine** with a clock phrase (`every morning`, `every evening`, `weekdays at 8am`, `every 30 minutes until 4 AM`); **Test run** does real work. Type **Stop now** or use the Stop button to cancel in-progress work — a new message takes priority.
+- Add a **routine** with a clock phrase (`every morning`, `every evening`, `weekdays at 8am`, `every 30 minutes until 4 AM`); **Test run** does real work. Type **Stop now** or use the Stop button to cancel in-progress work (including the current shell command) — a new message takes priority.
+- Attach files with **+**, pin a chat, search messages from the sidebar, and add **Plugins** (MCP or webhook). **Teach a task** records a demo on the agent's screen and saves a skill.
 
 `scripts/setup.sh` asks **how you'll use GrokBot** (see below). Health check anytime: `node scripts/doctor.mjs`
 
@@ -194,12 +199,14 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Team lead / coordinator | a Bot owns unmentioned group work and delegates | yes — Team lead checkbox, `@Name` / `@everyone` |
 | Mid-task redirect / Stop now | new user message takes priority; “Stop now” cancels | yes |
 | Create a focused Bot | existing Bots can spawn a specialist | yes — `create_agent` |
-| Teach-a-task (record demo) | optional, up to 10 minutes | not yet — write or save a skill instead |
-| Connectors / Plugins / MCP | yes | not yet |
-| Chat attachments, threads, reactions | yes | not yet |
-| Notifications (done / needs input) | desktop + iOS | not yet |
-| Search / pin / @everyone | yes | sidebar search + `@everyone`; pin not yet |
+| Teach-a-task (record demo) | optional, up to 10 minutes | yes — Profile / rail **Teach a task** takes over the agent computer, captures key frames, and saves a skill |
+| Connectors / Plugins / MCP | yes | yes — sidebar **Plugins** (MCP stdio or webhook); agents call `call_plugin` |
+| Chat attachments, threads, reactions | yes | attachments + emoji reactions; hierarchical agent threads (not Slack-style reply trees) |
+| Notifications (done / needs input) | desktop + iOS | desktop + in-app banner (no iOS app) |
+| Search / pin / @everyone | yes | sidebar agent + message search, pin chats, `@everyone` |
 | Hierarchical agent↔agent chat | view-only panel in the current workspace, not a sidebar chat | yes — `Messaged` / `From` chips open the private thread |
+| Mid-task Stop now | cancels the current computer-use turn | yes — also aborts the in-flight shell/exec (rebuild the agent image with `npm run image:build` so `/abort` exists in running containers) |
+| `@everyone` / multi-bot dispatch | quieter sequential handoff | teammates run one after another instead of all booting at once |
 | Mobile apps | iOS | not yet |
 | Local-computer execution | optional, approval-gated | no (agents stay in their container) |
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Agent, Conversation } from "@grokbot/shared";
+import type { Agent, Conversation, SearchHit } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 import type { useTheme } from "../theme";
@@ -8,14 +8,16 @@ import { timeLabel } from "../format";
 
 function RowMenu({
   agent,
+  conv,
   onClose,
   onNavigate,
 }: {
   agent: Agent;
+  conv?: Conversation;
   onClose: () => void;
-  onNavigate: (id: string | null) => void;
+  onNavigate: (id: string | null, highlightMessageId?: string) => void;
 }) {
-  const { refreshAgents } = useStore();
+  const { refreshAgents, refreshConversations } = useStore();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -32,6 +34,20 @@ function RowMenu({
       className="absolute right-2 top-11 z-30 w-40 overflow-hidden rounded-xl gb-pop"
       style={{ background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
     >
+      {conv && (
+        <button
+          className={item}
+          style={{ color: "var(--text)" }}
+          onClick={async (e) => {
+            e.stopPropagation();
+            await api.pinConversation(conv.id, !conv.pinned);
+            await refreshConversations();
+            onClose();
+          }}
+        >
+          {conv.pinned ? "Unpin" : "Pin"}
+        </button>
+      )}
       <button
         className={item}
         style={{ color: "var(--text)" }}
@@ -89,7 +105,7 @@ function AgentRow({
   conv?: Conversation;
   selected: boolean;
   onOpen: () => void;
-  onNavigate: (id: string | null) => void;
+  onNavigate: (id: string | null, highlightMessageId?: string) => void;
 }) {
   const { state } = useStore();
   const [menu, setMenu] = useState(false);
@@ -118,6 +134,7 @@ function AgentRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[14px] font-semibold" style={{ color: "var(--text)" }}>
+              {conv?.pinned ? "📌 " : ""}
               {agent.name}
             </span>
             {!waiting && (
@@ -145,7 +162,7 @@ function AgentRow({
       >
         ⋯
       </button>
-      {menu && <RowMenu agent={agent} onClose={() => setMenu(false)} onNavigate={onNavigate} />}
+      {menu && <RowMenu agent={agent} conv={conv} onClose={() => setMenu(false)} onNavigate={onNavigate} />}
     </div>
   );
 }
@@ -176,16 +193,19 @@ export function Sidebar({
   theme,
   onNewAgent,
   onNewGroup,
+  onPlugins,
   onNavigate,
 }: {
   theme: ReturnType<typeof useTheme>;
   onNewAgent: () => void;
   onNewGroup: () => void;
-  onNavigate: (id: string | null) => void;
+  onPlugins: () => void;
+  onNavigate: (id: string | null, highlightMessageId?: string) => void;
 }) {
   const { state } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -223,6 +243,28 @@ export function Sidebar({
     return true;
   });
   const hiddenCount = state.agents.filter((a) => a.hidden).length;
+  const pinned = state.conversations.filter((c) => {
+    if (!c.pinned || c.kind === "agent_dm") return false;
+    if (!q) return true;
+    if (c.kind === "group") return c.title.toLowerCase().includes(q);
+    const agent = agentById.get(c.agentIds[0] ?? "");
+    return !!agent && (agent.name.toLowerCase().includes(q) || agent.roleTitle.toLowerCase().includes(q));
+  });
+
+  useEffect(() => {
+    const raw = query.trim();
+    if (raw.length < 2) {
+      setHits([]);
+      return;
+    }
+    const t = setTimeout(() => {
+      void api
+        .search(raw)
+        .then(setHits)
+        .catch(() => setHits([]));
+    }, 220);
+    return () => clearTimeout(t);
+  }, [query]);
 
   function openAgent(agent: Agent) {
     const conv = directByAgent.get(agent.id);
@@ -296,6 +338,59 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {hits.length > 0 && (
+          <Section title="Messages" collapsed={!!collapsed.Messages} onToggle={() => toggle("Messages")}>
+            {hits.map((h) => (
+              <button
+                key={h.messageId}
+                onClick={() => onNavigate(h.conversationId, h.messageId)}
+                className="flex w-full flex-col items-start rounded-[14px] px-2 py-[7px] text-left"
+              >
+                <div className="truncate text-[13px] font-semibold">{h.conversationTitle}</div>
+                <div className="line-clamp-2 text-[12px]" style={{ color: "var(--muted)" }}>
+                  {h.text}
+                </div>
+              </button>
+            ))}
+          </Section>
+        )}
+        {pinned.length > 0 && (
+          <Section title="Pinned" collapsed={!!collapsed.Pinned} onToggle={() => toggle("Pinned")}>
+            {pinned.map((c) => {
+              if (c.kind === "direct") {
+                const agent = agentById.get(c.agentIds[0] ?? "");
+                if (!agent || (agent.hidden && !showHidden)) return null;
+                return (
+                  <AgentRow
+                    key={`pin-${c.id}`}
+                    agent={agent}
+                    conv={c}
+                    selected={state.selectedId === c.id}
+                    onOpen={() => onNavigate(c.id)}
+                    onNavigate={onNavigate}
+                  />
+                );
+              }
+              const groupMembers = c.agentIds.map((id) => agentById.get(id)).filter((x): x is Agent => !!x);
+              return (
+                <button
+                  key={`pin-${c.id}`}
+                  onClick={() => onNavigate(c.id)}
+                  className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
+                  style={{ background: state.selectedId === c.id ? "var(--selected)" : "transparent" }}
+                >
+                  <GroupAvatar agents={groupMembers} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[14px] font-semibold">📌 {c.title}</div>
+                    <div className="truncate text-[12px]" style={{ color: "var(--muted)" }}>
+                      {groupMembers.length} agents
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </Section>
+        )}
         {leaders.length > 0 && (
           <Section title="Leaders" collapsed={!!collapsed.Leaders} onToggle={() => toggle("Leaders")}>
             {rows(leaders)}
@@ -329,7 +424,10 @@ export function Sidebar({
                 >
                   <GroupAvatar agents={groupMembers} size={36} />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[14px] font-semibold">{c.title}</div>
+                    <div className="truncate text-[14px] font-semibold">
+                      {c.pinned ? "📌 " : ""}
+                      {c.title}
+                    </div>
                     <div className="truncate text-[12px]" style={{ color: "var(--muted)" }}>
                       {groupMembers.length} agents
                     </div>
@@ -354,8 +452,18 @@ export function Sidebar({
       </div>
 
       <div className="flex items-center gap-2 px-3 py-2.5" style={{ borderTop: "1px solid var(--hairline)" }}>
-        <button className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px]" style={{ color: "var(--text)" }} title="Plugins (coming soon)">
+        <button
+          onClick={onPlugins}
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-[13px]"
+          style={{ color: "var(--text)" }}
+          title="Plugins / MCP connectors"
+        >
           <span className="text-[15px]">⌁</span> Plugins
+          {state.plugins.length > 0 && (
+            <span className="text-[11px]" style={{ color: "var(--muted)" }}>
+              {state.plugins.length}
+            </span>
+          )}
         </button>
         <span className="flex-1" />
         <button

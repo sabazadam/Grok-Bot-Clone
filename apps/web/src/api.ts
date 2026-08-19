@@ -1,4 +1,29 @@
-import type { Agent, Approval, Conversation, MemoryEntry, Message, Provider, Routine, Skill } from "@grokbot/shared";
+import type {
+  Agent,
+  Approval,
+  Conversation,
+  MemoryEntry,
+  Message,
+  Plugin,
+  Provider,
+  Routine,
+  SearchHit,
+  Skill,
+} from "@grokbot/shared";
+
+export interface IncomingAttachment {
+  name: string;
+  mime: string;
+  dataBase64: string;
+}
+
+export interface TeachSession {
+  agentId: string;
+  name: string;
+  notes: string;
+  startedAt: number;
+  shots: string[];
+}
 
 export interface ProviderInfo {
   id: Provider;
@@ -55,8 +80,28 @@ export const api = {
   deleteConversation: (id: string) => req(`/api/conversations/${id}`, { method: "DELETE" }),
   messages: (convId: string) => req<Message[]>(`/api/conversations/${convId}/messages`),
   approvals: (convId: string) => req<Approval[]>(`/api/conversations/${convId}/approvals`),
-  sendMessage: (convId: string, text: string) =>
-    req<Message>(`/api/conversations/${convId}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
+  sendMessage: (convId: string, text: string, attachments?: IncomingAttachment[]) =>
+    req<Message>(`/api/conversations/${convId}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text, attachments }),
+    }),
+  pinConversation: (id: string, pinned: boolean) =>
+    req<Conversation>(`/api/conversations/${id}/pin`, { method: "POST", body: JSON.stringify({ pinned }) }),
+  react: (messageId: string, emoji: string) =>
+    req<Message>(`/api/messages/${messageId}/react`, { method: "POST", body: JSON.stringify({ emoji }) }),
+  search: (q: string) => req<SearchHit[]>(`/api/search?q=${encodeURIComponent(q)}`),
+  plugins: () => req<Plugin[]>("/api/plugins"),
+  createPlugin: (body: unknown) => req<Plugin>("/api/plugins", { method: "POST", body: JSON.stringify(body) }),
+  updatePlugin: (id: string, body: unknown) => req<Plugin>(`/api/plugins/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deletePlugin: (id: string) => req<{ ok: boolean }>(`/api/plugins/${id}`, { method: "DELETE" }),
+  teachSession: (agentId: string) => req<{ session: TeachSession | null }>(`/api/agents/${agentId}/teach`),
+  teachStart: (agentId: string, name: string, notes: string) =>
+    req<TeachSession>(`/api/agents/${agentId}/teach/start`, { method: "POST", body: JSON.stringify({ name, notes }) }),
+  teachStop: (agentId: string, save: boolean) =>
+    req<{ ok: boolean; skill?: Skill; session: TeachSession | null }>(`/api/agents/${agentId}/teach/stop`, {
+      method: "POST",
+      body: JSON.stringify({ save }),
+    }),
   stopConversation: (convId: string) => req<{ ok: boolean }>(`/api/conversations/${convId}/stop`, { method: "POST" }),
   skills: () => req<Skill[]>("/api/skills"),
   createSkill: (body: unknown) => req<Skill>("/api/skills", { method: "POST", body: JSON.stringify(body) }),

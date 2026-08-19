@@ -1,11 +1,19 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Agent, Approval, Conversation, Message, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
+import type { Agent, Approval, Conversation, Message, Plugin, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
 import { api, type AppConfig } from "./api";
 
 export interface LiveStep {
   taskId: string;
   caption: string;
   screenshotUrl?: string;
+  at: number;
+}
+
+export interface Notice {
+  title: string;
+  body: string;
+  conversationId?: string;
+  kind: "done" | "needs_input";
   at: number;
 }
 
@@ -22,17 +30,29 @@ interface State {
   liveLogs: Record<string, LiveStep[]>;
   skills: Skill[];
   routines: Routine[];
+  plugins: Plugin[];
+  lastNotice: Notice | null;
   selectedId: string | null;
 }
 
 type Action =
-  | { type: "init"; config: AppConfig; agents: Agent[]; conversations: Conversation[]; skills: Skill[]; routines: Routine[] }
+  | {
+      type: "init";
+      config: AppConfig;
+      agents: Agent[];
+      conversations: Conversation[];
+      skills: Skill[];
+      routines: Routine[];
+      plugins: Plugin[];
+    }
   | { type: "select"; id: string | null }
   | { type: "messages_loaded"; convId: string; messages: Message[] }
   | { type: "approvals_loaded"; approvals: Approval[] }
   | { type: "conversations"; conversations: Conversation[] }
   | { type: "event"; event: ServerEvent }
-  | { type: "agents"; agents: Agent[] };
+  | { type: "agents"; agents: Agent[] }
+  | { type: "plugins"; plugins: Plugin[] }
+  | { type: "clear_notice" };
 
 function upsert<T extends { id: string }>(arr: T[], item: T): T[] {
   const i = arr.findIndex((x) => x.id === item.id);
@@ -52,11 +72,14 @@ function reducer(state: State, action: Action): State {
         conversations: action.conversations,
         skills: action.skills,
         routines: action.routines,
+        plugins: action.plugins,
       };
     case "agents":
       return { ...state, agents: action.agents };
     case "conversations":
       return { ...state, conversations: action.conversations };
+    case "plugins":
+      return { ...state, plugins: action.plugins };
     case "select":
       return { ...state, selectedId: action.id };
     case "messages_loaded":
@@ -66,6 +89,8 @@ function reducer(state: State, action: Action): State {
       for (const a of action.approvals) approvals[a.id] = a;
       return { ...state, approvals };
     }
+    case "clear_notice":
+      return { ...state, lastNotice: null };
     case "event": {
       const e = action.event;
       switch (e.type) {
@@ -75,7 +100,16 @@ function reducer(state: State, action: Action): State {
             c.id === e.message.conversationId ? { ...c, lastMessageAt: e.message.createdAt } : c,
           );
           if (!list) return { ...state, conversations };
-          if (list.some((m) => m.id === e.message.id)) return { ...state, conversations };
+          const idx = list.findIndex((m) => m.id === e.message.id);
+          if (idx >= 0) {
+            const next = [...list];
+            next[idx] = e.message;
+            return {
+              ...state,
+              conversations,
+              messages: { ...state.messages, [e.message.conversationId]: next },
+            };
+          }
           return {
             ...state,
             conversations,
@@ -119,6 +153,21 @@ function reducer(state: State, action: Action): State {
           return { ...state, routines: upsert(state.routines, e.routine) };
         case "routine_deleted":
           return { ...state, routines: state.routines.filter((r) => r.id !== e.routineId) };
+        case "plugin_updated":
+          return { ...state, plugins: upsert(state.plugins, e.plugin) };
+        case "plugin_deleted":
+          return { ...state, plugins: state.plugins.filter((p) => p.id !== e.pluginId) };
+        case "notice":
+          return {
+            ...state,
+            lastNotice: {
+              title: e.title,
+              body: e.body,
+              conversationId: e.conversationId,
+              kind: e.kind,
+              at: Date.now(),
+            },
+          };
         default:
           return state;
       }
@@ -139,6 +188,8 @@ const initial: State = {
   liveLogs: {},
   skills: [],
   routines: [],
+  plugins: [],
+  lastNotice: null,
   selectedId: null,
 };
 
@@ -147,6 +198,7 @@ const Ctx = createContext<{
   dispatch: React.Dispatch<Action>;
   refreshAgents: () => Promise<void>;
   refreshConversations: () => Promise<void>;
+  refreshPlugins: () => Promise<void>;
   loadMessages: (id: string) => Promise<void>;
   selectConversation: (id: string | null) => void;
 } | null>(null);
@@ -159,14 +211,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const [config, agents, conversations, skills, routines] = await Promise.all([
+      const [config, agents, conversations, skills, routines, plugins] = await Promise.all([
         api.config(),
         api.agents(),
         api.conversations(),
         api.skills().catch(() => [] as Skill[]),
         api.routines().catch(() => [] as Routine[]),
+        api.plugins().catch(() => [] as Plugin[]),
       ]);
-      dispatch({ type: "init", config, agents, conversations, skills, routines });
+      dispatch({ type: "init", config, agents, conversations, skills, routines, plugins });
     })();
   }, []);
 
@@ -203,6 +256,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "conversations", conversations: await api.conversations() });
   }, []);
 
+  const refreshPlugins = useCallback(async () => {
+    dispatch({ type: "plugins", plugins: await api.plugins() });
+  }, []);
+
   const loadMessages = useCallback(async (id: string) => {
     const messages = await api.messages(id);
     dispatch({ type: "messages_loaded", convId: id, messages });
@@ -218,7 +275,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     dispatch({ type: "select", id });
     if (id) {
       void api.messages(id).then((messages) => dispatch({ type: "messages_loaded", convId: id, messages }));
-      void api.approvals(id).then((approvals) => dispatch({ type: "approvals_loaded", approvals })).catch(() => undefined);
+      void api
+        .approvals(id)
+        .then((approvals) => dispatch({ type: "approvals_loaded", approvals }))
+        .catch(() => undefined);
     }
   }, []);
 
@@ -228,10 +288,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       dispatch,
       refreshAgents,
       refreshConversations,
+      refreshPlugins,
       loadMessages,
       selectConversation,
     }),
-    [state, refreshAgents, refreshConversations, loadMessages, selectConversation],
+    [state, refreshAgents, refreshConversations, refreshPlugins, loadMessages, selectConversation],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
