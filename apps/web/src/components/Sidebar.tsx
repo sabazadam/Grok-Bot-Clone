@@ -1,10 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent, Conversation, SearchHit } from "@grokbot/shared";
 import { api } from "../api";
+import type { LastSeenMap } from "../lastSeen";
 import { useStore } from "../store";
 import type { useTheme } from "../theme";
 import { Avatar, GroupAvatar } from "./Avatar";
 import { timeLabel } from "../format";
+
+function isUnread(conv: Conversation | undefined, selectedId: string | null, lastSeen: LastSeenMap): boolean {
+  if (!conv || conv.id === selectedId) return false;
+  const seen = lastSeen[conv.id];
+  if (seen) return conv.lastMessageAt > seen.at;
+  return conv.lastMessageAt > conv.createdAt;
+}
 
 function RowMenu({
   agent,
@@ -73,7 +81,7 @@ function RowMenu({
           onClose();
         }}
       >
-        {agent.hidden ? "Unhide" : "Hide"}
+        {agent.hidden ? "Show in sidebar" : "Hide from sidebar"}
       </button>
       <button
         className={item}
@@ -98,12 +106,14 @@ function AgentRow({
   agent,
   conv,
   selected,
+  unread,
   onOpen,
   onNavigate,
 }: {
   agent: Agent;
   conv?: Conversation;
   selected: boolean;
+  unread?: boolean;
   onOpen: () => void;
   onNavigate: (id: string | null, highlightMessageId?: string) => void;
 }) {
@@ -151,6 +161,7 @@ function AgentRow({
           </div>
         </div>
         {waiting && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "var(--wait)" }} />}
+        {!waiting && unread && <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "#3b82f6" }} />}
       </button>
       <button
         onClick={(e) => {
@@ -191,12 +202,14 @@ function Section({
 
 export function Sidebar({
   theme,
+  lastSeen,
   onNewAgent,
   onNewGroup,
   onPlugins,
   onNavigate,
 }: {
   theme: ReturnType<typeof useTheme>;
+  lastSeen: LastSeenMap;
   onNewAgent: () => void;
   onNewGroup: () => void;
   onPlugins: () => void;
@@ -208,6 +221,7 @@ export function Sidebar({
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const plusRef = useRef<HTMLDivElement>(null);
 
   const agentById = useMemo(() => new Map(state.agents.map((a) => [a.id, a])), [state.agents]);
   const directByAgent = useMemo(() => {
@@ -219,6 +233,13 @@ export function Sidebar({
   }, [state.conversations]);
 
   const q = query.trim().toLowerCase();
+  const pinned = state.conversations.filter((c) => {
+    if (!c.pinned || c.kind === "agent_dm") return false;
+    if (!q) return true;
+    if (c.kind === "group") return c.title.toLowerCase().includes(q);
+    const agent = agentById.get(c.agentIds[0] ?? "");
+    return !!agent && (agent.name.toLowerCase().includes(q) || agent.roleTitle.toLowerCase().includes(q));
+  });
   const visible = state.agents.filter((a) => {
     if (a.hidden && !showHidden) return false;
     if (
@@ -231,25 +252,23 @@ export function Sidebar({
     }
     return true;
   });
-  const leaders = visible.filter((a) => a.isTeamLead);
-  const nonLeaders = visible.filter((a) => !a.isTeamLead);
+  const pinnedAgentIds = new Set(
+    pinned.filter((c) => c.kind === "direct").map((c) => c.agentIds[0]).filter((id): id is string => !!id),
+  );
+  const pinnedGroupIds = new Set(pinned.filter((c) => c.kind === "group").map((c) => c.id));
+  const leaders = visible.filter((a) => a.isTeamLead && !pinnedAgentIds.has(a.id));
+  const nonLeaders = visible.filter((a) => !a.isTeamLead && !pinnedAgentIds.has(a.id));
   const teamNames = [...new Set(nonLeaders.map((a) => (a.team ?? "").trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
   const unassigned = nonLeaders.filter((a) => !(a.team ?? "").trim());
   const groups = state.conversations.filter((c) => {
     if (c.kind !== "group") return false;
+    if (pinnedGroupIds.has(c.id)) return false;
     if (q && !c.title.toLowerCase().includes(q)) return false;
     return true;
   });
   const hiddenCount = state.agents.filter((a) => a.hidden).length;
-  const pinned = state.conversations.filter((c) => {
-    if (!c.pinned || c.kind === "agent_dm") return false;
-    if (!q) return true;
-    if (c.kind === "group") return c.title.toLowerCase().includes(q);
-    const agent = agentById.get(c.agentIds[0] ?? "");
-    return !!agent && (agent.name.toLowerCase().includes(q) || agent.roleTitle.toLowerCase().includes(q));
-  });
 
   useEffect(() => {
     const raw = query.trim();
@@ -266,9 +285,23 @@ export function Sidebar({
     return () => clearTimeout(t);
   }, [query]);
 
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (plusRef.current && !plusRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  function go(id: string | null, highlightMessageId?: string) {
+    setQuery("");
+    setHits([]);
+    onNavigate(id, highlightMessageId);
+  }
+
   function openAgent(agent: Agent) {
     const conv = directByAgent.get(agent.id);
-    if (conv) onNavigate(conv.id);
+    if (conv) go(conv.id);
   }
 
   function toggle(title: string) {
@@ -282,8 +315,9 @@ export function Sidebar({
         agent={a}
         conv={directByAgent.get(a.id)}
         selected={state.selectedId === directByAgent.get(a.id)?.id}
+        unread={isUnread(directByAgent.get(a.id), state.selectedId, lastSeen)}
         onOpen={() => openAgent(a)}
-        onNavigate={onNavigate}
+        onNavigate={go}
       />
     ));
   }
@@ -297,7 +331,7 @@ export function Sidebar({
           </span>
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search" className="gb-search" />
         </div>
-        <div className="relative">
+        <div className="relative" ref={plusRef}>
           <button
             onClick={() => setMenuOpen((v) => !v)}
             className="flex h-8 w-8 items-center justify-center rounded-full text-lg font-light"
@@ -330,7 +364,7 @@ export function Sidebar({
                   onNewGroup();
                 }}
               >
-                New group
+                New group chat
               </button>
             </div>
           )}
@@ -343,7 +377,7 @@ export function Sidebar({
             {hits.map((h) => (
               <button
                 key={h.messageId}
-                onClick={() => onNavigate(h.conversationId, h.messageId)}
+                onClick={() => go(h.conversationId, h.messageId)}
                 className="flex w-full flex-col items-start rounded-[14px] px-2 py-[7px] text-left"
               >
                 <div className="truncate text-[13px] font-semibold">{h.conversationTitle}</div>
@@ -366,8 +400,9 @@ export function Sidebar({
                     agent={agent}
                     conv={c}
                     selected={state.selectedId === c.id}
-                    onOpen={() => onNavigate(c.id)}
-                    onNavigate={onNavigate}
+                    unread={isUnread(c, state.selectedId, lastSeen)}
+                    onOpen={() => go(c.id)}
+                    onNavigate={go}
                   />
                 );
               }
@@ -375,7 +410,7 @@ export function Sidebar({
               return (
                 <button
                   key={`pin-${c.id}`}
-                  onClick={() => onNavigate(c.id)}
+                  onClick={() => go(c.id)}
                   className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
                   style={{ background: state.selectedId === c.id ? "var(--selected)" : "transparent" }}
                 >
@@ -386,6 +421,9 @@ export function Sidebar({
                       {groupMembers.length} agents
                     </div>
                   </div>
+                  {isUnread(c, state.selectedId, lastSeen) && (
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "#3b82f6" }} />
+                  )}
                 </button>
               );
             })}
@@ -418,7 +456,7 @@ export function Sidebar({
               return (
                 <button
                   key={c.id}
-                  onClick={() => onNavigate(c.id)}
+                  onClick={() => go(c.id)}
                   className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
                   style={{ background: selected ? "var(--selected)" : "transparent" }}
                 >
@@ -432,13 +470,16 @@ export function Sidebar({
                       {groupMembers.length} agents
                     </div>
                   </div>
+                  {isUnread(c, state.selectedId, lastSeen) && (
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: "#3b82f6" }} />
+                  )}
                 </button>
               );
             })}
           </Section>
         )}
 
-        {visible.length === 0 && groups.length === 0 && (
+        {visible.length === 0 && groups.length === 0 && hits.length === 0 && q.length < 2 && (
           <p className="px-3 py-8 text-center text-[13px]" style={{ color: "var(--muted)" }}>
             Create a teammate with +
           </p>
@@ -446,7 +487,7 @@ export function Sidebar({
 
         {hiddenCount > 0 && (
           <button onClick={() => setShowHidden((v) => !v)} className="mt-2 w-full px-3 py-2 text-left text-[12px]" style={{ color: "var(--muted)" }}>
-            {showHidden ? "Hide" : "Show"} hidden ({hiddenCount})
+            {showHidden ? "Hide hidden chats" : "Show hidden chats"} ({hiddenCount})
           </button>
         )}
       </div>

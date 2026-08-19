@@ -46,6 +46,11 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
         await api.updateAgent(existing.id, body);
         await refreshAgents();
       } else {
+        const roster = state.agents.length + state.conversations.filter((c) => c.kind === "group").length;
+        if (roster >= 50) {
+          setError("roster limit reached (50 bots + groups)");
+          return;
+        }
         await api.createAgent(body);
         await refreshAgents();
         const convs = await api.conversations();
@@ -190,6 +195,11 @@ export function GroupModal({ onClose }: { onClose: () => void }) {
     setBusy(true);
     setError(null);
     try {
+      const roster = state.agents.length + state.conversations.filter((c) => c.kind === "group").length;
+      if (roster >= 50) {
+        setError("roster limit reached (50 bots + groups)");
+        return;
+      }
       const conv = await api.createGroup(title.trim(), selected);
       dispatch({ type: "event", event: { type: "conversation_updated", conversation: conv } });
       selectConversation(conv.id);
@@ -211,7 +221,7 @@ export function GroupModal({ onClose }: { onClose: () => void }) {
         <h2 className="mb-4 text-lg font-bold" style={{ color: "var(--text)" }}>New group chat</h2>
         <label className={label} style={labelStyle}>Group name</label>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Website Launch" className={`${field} mb-3`} style={fieldStyle} />
-        <label className={label} style={labelStyle}>Agents</label>
+        <label className={label} style={labelStyle}>Bots (2–6)</label>
         <div className="mb-4 max-h-48 space-y-1 overflow-y-auto">
           {state.agents.filter((a) => !a.hidden).map((a) => (
             <label
@@ -222,6 +232,7 @@ export function GroupModal({ onClose }: { onClose: () => void }) {
               <input
                 type="checkbox"
                 checked={selected.includes(a.id)}
+                disabled={!selected.includes(a.id) && selected.length >= 6}
                 onChange={(e) => setSelected((cur) => (e.target.checked ? [...cur, a.id] : cur.filter((x) => x !== a.id)))}
                 className="h-4 w-4"
               />
@@ -236,7 +247,7 @@ export function GroupModal({ onClose }: { onClose: () => void }) {
           </button>
           <button
             onClick={() => void create()}
-            disabled={busy || !title.trim() || selected.length === 0}
+            disabled={busy || !title.trim() || selected.length < 2 || selected.length > 6}
             className="rounded-full px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
             style={{ background: "var(--accent)" }}
           >

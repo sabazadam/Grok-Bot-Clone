@@ -6,6 +6,8 @@ import { Avatar } from "./Avatar";
 import { dayStamp, handoffPeerName, handoffVerb, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
 
 const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
+const MAX_ATTACH_FILES = 6;
+const MAX_ATTACH_BYTES = 12 * 1024 * 1024;
 
 function readAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -240,10 +242,12 @@ function Bubble({
   }
 
   const isUser = message.sender.kind === "user";
+  const isSystem = message.sender.kind === "system";
+  const [picker, setPicker] = useState(false);
   const reactions = Object.entries(message.reactions ?? {}).filter(([, n]) => n > 0);
   return (
     <div id={`msg-${message.id}`} className={`group my-2.5 ${highlight ? "gb-highlight" : ""}`}>
-      {!isUser && agent && (
+      {!isUser && !isSystem && agent && (
         <div className="mb-1 flex items-center gap-2">
           <Avatar agent={agent} size={18} />
           <span className="text-[12px]" style={{ color: "var(--muted)" }}>
@@ -264,31 +268,51 @@ function Bubble({
         {message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
       </div>
       {message.screenshotUrl && <img src={message.screenshotUrl} alt="" className="mt-2 max-h-56 max-w-[360px] rounded-xl" />}
-      <div className="mt-1 flex flex-wrap items-center gap-1">
-        {reactions.map(([emoji, count]) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => void api.react(message.id, emoji)}
-            className="rounded-full px-1.5 py-0.5 text-[12px]"
-            style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
-          >
-            {emoji} {count}
-          </button>
-        ))}
-        {REACTIONS.filter((emoji) => !reactions.some(([e]) => e === emoji)).map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            title={`React ${emoji}`}
-            onClick={() => void api.react(message.id, emoji)}
-            className="grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-40 hover:opacity-100"
-            style={{ background: "var(--surface)" }}
-          >
-            {emoji}
-          </button>
-        ))}
-      </div>
+      {(reactions.length > 0 || !isSystem) && (
+        <div className="mt-1 flex flex-wrap items-center gap-1">
+          {reactions.map(([emoji, count]) => (
+            <button
+              key={emoji}
+              type="button"
+              onClick={() => void api.react(message.id, emoji)}
+              className="rounded-full px-1.5 py-0.5 text-[12px]"
+              style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
+            >
+              {emoji} {count}
+            </button>
+          ))}
+          {!isSystem && (
+            <button
+              type="button"
+              title="Add reaction"
+              aria-label="Add reaction"
+              onClick={() => setPicker((v) => !v)}
+              className="grid h-6 w-6 place-items-center rounded-full text-[13px] opacity-40 hover:opacity-100"
+              style={{ background: "var(--surface)" }}
+            >
+              ☺
+            </button>
+          )}
+          {!isSystem &&
+            REACTIONS.filter((emoji) => !reactions.some(([e]) => e === emoji)).map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                title={`React ${emoji}`}
+                onClick={() => {
+                  setPicker(false);
+                  void api.react(message.id, emoji);
+                }}
+                className={`grid h-6 w-6 place-items-center rounded-full text-[13px] ${
+                  picker ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus:opacity-100"
+                }`}
+                style={{ background: "var(--surface)" }}
+              >
+                {emoji}
+              </button>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -329,6 +353,29 @@ export function ChatView({
     draft.startsWith("/") && !draft.includes("\n")
       ? state.skills.filter((s) => s.name.toLowerCase().startsWith(draft.slice(1).toLowerCase())).slice(0, 6)
       : [];
+  const atMatch = draft.match(/@([^\s@]*)$/);
+  const atQuery = atMatch ? (atMatch[1] ?? "").toLowerCase() : null;
+  const mentionHits: { key: string; label: string; insert: string; hint: string }[] = [];
+  if (atQuery !== null && skillHits.length === 0) {
+    const match = (name: string) => !atQuery || name.toLowerCase().includes(atQuery);
+    if (conversation.kind === "group" && "everyone".startsWith(atQuery)) {
+      mentionHits.push({ key: "everyone", label: "@everyone", insert: "@everyone ", hint: "whole group" });
+    }
+    const agentHits: typeof mentionHits = [];
+    const seenAgents = new Set<string>();
+    for (const a of [...members, ...state.agents.filter((x) => !x.hidden)]) {
+      if (seenAgents.has(a.id) || !match(a.name)) continue;
+      seenAgents.add(a.id);
+      agentHits.push({ key: `a-${a.id}`, label: `@${a.name}`, insert: `@${a.name} `, hint: a.roleTitle || "Bot" });
+    }
+    const pluginHits = state.plugins
+      .filter((p) => p.enabled && match(p.name))
+      .map((p) => ({ key: `p-${p.id}`, label: `@${p.name}`, insert: `@${p.name} `, hint: "plugin" }));
+    const routineHits = state.routines
+      .filter((r) => match(r.name))
+      .map((r) => ({ key: `r-${r.id}`, label: `@${r.name}`, insert: `@${r.name} `, hint: "routine" }));
+    mentionHits.push(...agentHits.slice(0, 4), ...pluginHits.slice(0, 3), ...routineHits.slice(0, 3));
+  }
 
   let lastUserIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -355,9 +402,9 @@ export function ChatView({
   async function addFiles(files: FileList | File[] | null) {
     if (!files) return;
     const next: IncomingAttachment[] = [];
-    for (const file of Array.from(files).slice(0, 4 - pending.length)) {
-      if (file.size > 6 * 1024 * 1024) {
-        setSendError(`${file.name} is over 6 MB`);
+    for (const file of Array.from(files).slice(0, MAX_ATTACH_FILES - pending.length)) {
+      if (file.size > MAX_ATTACH_BYTES) {
+        setSendError(`${file.name} is over 12 MB`);
         continue;
       }
       next.push({
@@ -366,7 +413,7 @@ export function ChatView({
         dataBase64: await readAsBase64(file),
       });
     }
-    if (next.length) setPending((cur) => [...cur, ...next].slice(0, 4));
+    if (next.length) setPending((cur) => [...cur, ...next].slice(0, MAX_ATTACH_FILES));
   }
 
   async function send() {
@@ -434,7 +481,7 @@ export function ChatView({
       <div className="flex-1 overflow-y-auto px-6 py-2">
         {messages.length === 0 && (
           <p className="py-16 text-center text-[14px]" style={{ color: "var(--muted)" }}>
-            {single ? `Message ${single.name}` : "Message the group — @Name or @everyone"}
+            {single ? `Message ${single.name}` : "Message the group — @Name, @everyone, @plugin, or @routine"}
           </p>
         )}
         {messages.map((m, i) => (
@@ -498,7 +545,7 @@ export function ChatView({
           </div>
         )}
         <div className="relative">
-          {skillHits.length > 0 && (
+          {(skillHits.length > 0 || mentionHits.length > 0) && (
             <div
               className="absolute bottom-full left-0 mb-1 w-[min(100%,360px)] overflow-hidden rounded-xl gb-pop"
               style={{ background: "var(--bg)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
@@ -516,6 +563,19 @@ export function ChatView({
                       {s.description}
                     </span>
                   ) : null}
+                </button>
+              ))}
+              {mentionHits.map((hit) => (
+                <button
+                  key={hit.key}
+                  type="button"
+                  onClick={() => setDraft((cur) => cur.replace(/@([^\s@]*)$/, hit.insert))}
+                  className="block w-full px-3 py-2 text-left text-[13px]"
+                >
+                  {hit.label}
+                  <span className="ml-2 text-[12px]" style={{ color: "var(--muted)" }}>
+                    {hit.hint}
+                  </span>
                 </button>
               ))}
             </div>
@@ -557,7 +617,7 @@ export function ChatView({
                 }
               }}
               rows={Math.min(4, Math.max(1, draft.split("\n").length))}
-              placeholder={single ? `Message ${single.name}` : "Message the group"}
+              placeholder={single ? `Message ${single.name}` : "Message the group — @Name, @everyone, @plugin"}
               className="max-h-28 flex-1 resize-none bg-transparent py-1.5 text-[15px] outline-none"
               style={{ color: "var(--text)" }}
             />

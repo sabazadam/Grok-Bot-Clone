@@ -12,10 +12,12 @@ import { Avatar, STATUS_LABELS } from "./Avatar";
 export function ComputerPanel({
   agents,
   onClose,
+  onTeach,
   forceTakeover = false,
 }: {
   agents: Agent[];
   onClose: () => void;
+  onTeach?: () => void;
   forceTakeover?: boolean;
 }) {
   const { state, refreshAgents } = useStore();
@@ -130,7 +132,13 @@ export function ComputerPanel({
 
       <div className="relative flex-1 bg-black">
         {vncUrl ? (
-          <iframe key={vncUrl} src={vncUrl} className="absolute inset-0 h-full w-full" title="Agent computer" />
+          <iframe
+            key={vncUrl}
+            src={vncUrl}
+            className="absolute inset-0 h-full w-full"
+            title="Agent computer"
+            allow="fullscreen; clipboard-read; clipboard-write"
+          />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3" style={{ color: "var(--muted)" }}>
             <p className="text-sm">{computer?.state === "stopped" ? "This computer is stopped." : "This computer isn't running yet."}</p>
@@ -166,6 +174,11 @@ export function ComputerPanel({
         <button disabled={busy || computer?.state !== "running"} onClick={() => void computerAction("stop")} className={ctlBtn} style={ctlStyle}>
           Stop
         </button>
+        {onTeach && (
+          <button onClick={onTeach} className={ctlBtn} style={ctlStyle} title="Teach a task from this computer">
+            Teach a task
+          </button>
+        )}
         <span className="flex-1" />
         <span className="text-[11px]" style={{ color: "var(--muted)" }}>
           {computer?.state === "running" ? `noVNC :${computer.novncPort}` : "isolated Linux OS · files persist"}

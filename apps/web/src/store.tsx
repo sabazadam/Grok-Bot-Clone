@@ -118,6 +118,19 @@ function reducer(state: State, action: Action): State {
         }
         case "agent_updated":
           return { ...state, agents: upsert(state.agents, e.agent) };
+        case "agent_deleted": {
+          const conversations = state.conversations
+            .filter((c) => !(c.kind !== "group" && c.agentIds.includes(e.agentId)))
+            .map((c) => (c.agentIds.includes(e.agentId) ? { ...c, agentIds: c.agentIds.filter((id) => id !== e.agentId) } : c))
+            .filter((c) => c.kind !== "group" || c.agentIds.length > 0);
+          const selectedGone = state.selectedId ? !conversations.some((c) => c.id === state.selectedId) : false;
+          return {
+            ...state,
+            agents: state.agents.filter((a) => a.id !== e.agentId),
+            conversations,
+            selectedId: selectedGone ? null : state.selectedId,
+          };
+        }
         case "agent_status":
           return {
             ...state,
