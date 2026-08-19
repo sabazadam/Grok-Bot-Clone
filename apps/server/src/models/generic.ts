@@ -34,6 +34,22 @@ Thoughts stay internal — they are not posted to chat. Stay silent while you wo
 
 Coordinates are pixels on the screenshot you see. After every action you receive the result and a fresh screenshot. Think step by step in "thought". When the task is complete (or impossible), reply with the {"done":true,...} form.`;
 
+const TEXT_ONLY = `
+## Vision
+This endpoint cannot receive screenshots (text-only). Do not wait for pixels and do not emit screenshot computer actions.
+Inspect the computer with bash and write notes to ~/workspace:
+- Files: ls, cat, python3
+- Web research: curl -sL -A "Mozilla/5.0" <url> (parse with python3). Also open the GUI browser so a human can watch: DISPLAY=:0 nohup /usr/local/bin/browser '<url>' >/dev/null 2>&1 &
+- Prefer bash over blind mouse clicks.`;
+
+function looksLikeDeepSeek(init: AdapterInit): boolean {
+  return `${init.baseUrl ?? ""} ${init.model}`.toLowerCase().includes("deepseek");
+}
+
+function isImageRejected(status: number, body: string): boolean {
+  return status === 400 && /image_url|unknown variant|does not support|vision|image/i.test(body);
+}
+
 function extractJson(text: string): Record<string, unknown> | undefined {
   // strip common fencing, then find the first balanced {...}
   const cleaned = text.replace(/```(?:json)?/gi, "").trim();
@@ -92,14 +108,55 @@ export class GenericAdapter implements ModelAdapter {
   private baseUrl: string;
   private counter = 0;
   private parseFailures = 0;
+  /** Official DeepSeek chat is text-only; also flipped on if a vision payload is rejected. */
+  private textOnly: boolean;
+  private disableThinking: boolean;
 
   constructor(private init: AdapterInit) {
     this.fetchFn = init.fetchFn ?? fetch;
     this.baseUrl = (init.baseUrl ?? "https://api.x.ai/v1").replace(/\/$/, "");
-    this.messages.push({ role: "system", content: init.systemPrompt + "\n" + PROTOCOL });
+    const deepseek = looksLikeDeepSeek(init);
+    this.textOnly = deepseek;
+    this.disableThinking = deepseek;
+    this.messages.push({
+      role: "system",
+      content: init.systemPrompt + "\n" + PROTOCOL + (this.textOnly ? "\n" + TEXT_ONLY : ""),
+    });
+  }
+
+  private userContent(text: string, screenshotB64?: string): unknown {
+    if (this.textOnly || !screenshotB64) {
+      return screenshotB64 && this.textOnly
+        ? `${text}\n(screenshot captured but not attached — text-only model; inspect with bash)`
+        : text;
+    }
+    return [
+      { type: "text", text },
+      { type: "image_url", image_url: { url: `data:image/png;base64,${screenshotB64}` } },
+    ];
+  }
+
+  private stripImagesFromHistory(): void {
+    for (const msg of this.messages) {
+      if (msg.role !== "user" || !Array.isArray(msg.content)) continue;
+      const texts: string[] = [];
+      for (const part of msg.content as { type?: string; text?: string }[]) {
+        if (part.type === "text" && part.text) texts.push(part.text);
+        if (part.type === "image_url") texts.push("(screenshot omitted — text-only model)");
+      }
+      msg.content = texts.join("\n") || "(earlier screenshot omitted)";
+    }
   }
 
   private async call(): Promise<AgentDecision> {
+    const payload: Record<string, unknown> = {
+      model: this.init.model,
+      messages: this.messages,
+      max_tokens: this.disableThinking ? 4096 : 2048,
+      temperature: 0.2,
+    };
+    if (this.disableThinking) payload.thinking = { type: "disabled" };
+
     const res = await this.fetchFn(`${this.baseUrl}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(180_000),
@@ -107,19 +164,29 @@ export class GenericAdapter implements ModelAdapter {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.init.apiKey}`,
       },
-      body: JSON.stringify({
-        model: this.init.model,
-        messages: this.messages,
-        max_tokens: 2048,
-        temperature: 0.2,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const text = await res.text();
+      if (!this.textOnly && isImageRejected(res.status, text)) {
+        this.textOnly = true;
+        this.stripImagesFromHistory();
+        if (typeof this.messages[0]?.content === "string" && !this.messages[0].content.includes("cannot receive screenshots")) {
+          this.messages[0].content += "\n" + TEXT_ONLY;
+        }
+        this.messages.push({
+          role: "user",
+          content: "This endpoint rejected images. Continue in text-only mode: inspect the computer with bash.",
+        });
+        return this.call();
+      }
       throw new Error(`Model API ${res.status}: ${text.slice(0, 500)}`);
     }
-    const data = (await res.json()) as { choices: { message: { content: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? "";
+    const data = (await res.json()) as {
+      choices: { message: { content?: string; reasoning_content?: string } }[];
+    };
+    const msg = data.choices?.[0]?.message ?? {};
+    const content = (msg.content || msg.reasoning_content || "").trim();
     this.messages.push({ role: "assistant", content });
 
     const obj = extractJson(content);
@@ -210,23 +277,15 @@ export class GenericAdapter implements ModelAdapter {
   async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
     this.messages.push({
       role: "user",
-      content: [
-        { type: "text", text: `TASK:\n${taskPrompt}\n\nCurrent screen:` },
-        { type: "image_url", image_url: { url: `data:image/png;base64,${screenshotB64}` } },
-      ],
+      content: this.userContent(`TASK:\n${taskPrompt}\n\nCurrent screen:`, screenshotB64),
     });
     return this.call();
   }
 
   async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
     for (const o of outcomes) {
-      const parts: unknown[] = [
-        { type: "text", text: `Result${o.isError ? " (ERROR)" : ""}: ${o.output || "ok"}${o.screenshotB64 ? "\nCurrent screen:" : ""}` },
-      ];
-      if (o.screenshotB64) {
-        parts.push({ type: "image_url", image_url: { url: `data:image/png;base64,${o.screenshotB64}` } });
-      }
-      this.messages.push({ role: "user", content: parts });
+      const text = `Result${o.isError ? " (ERROR)" : ""}: ${o.output || "ok"}${o.screenshotB64 ? "\nCurrent screen:" : ""}`;
+      this.messages.push({ role: "user", content: this.userContent(text, o.screenshotB64) });
     }
     this.trimImages();
     return this.call();

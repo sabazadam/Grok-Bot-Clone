@@ -35,7 +35,7 @@ your own machine (built for an Apple Silicon Mac mini).
 | Anthropic (Claude) | Messages API `computer` tool | `claude-sonnet-4-5` |
 | OpenAI | Responses API `computer_use_preview` | `computer-use-preview` |
 | Google (Gemini) | Interactions API `computer_use` (desktop env) | `gemini-3.6-flash` |
-| Generic / xAI | Any OpenAI-compatible vision endpoint via a JSON action protocol | `grok-4` |
+| Generic / xAI / DeepSeek | Any OpenAI-compatible endpoint via a JSON action protocol (vision when the API accepts images; DeepSeek is text-only and uses bash to inspect the computer) | `grok-4` |
 
 ## Quickstart (Mac mini / Apple Silicon)
 

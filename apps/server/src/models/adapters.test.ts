@@ -251,4 +251,57 @@ describe("GenericAdapter", () => {
     if (d.kind !== "act") throw new Error();
     expect(d.invocations[0]).toMatchObject({ tool: "send_message", text: "Need you to take over for 2FA." });
   });
+
+  it("sends screenshots as image_url for vision endpoints", async () => {
+    const { fn, calls } = mockFetch([
+      { choices: [{ message: { content: '{"done":true,"message":"ok"}' } }] },
+    ]);
+    const a = new GenericAdapter(init(fn, { model: "grok-4", baseUrl: "https://api.x.ai/v1" }));
+    await a.start("task", SCREENSHOT);
+    const content = calls[0]!.body.messages.at(-1).content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content.some((p: { type: string }) => p.type === "image_url")).toBe(true);
+    expect(calls[0]!.body.thinking).toBeUndefined();
+  });
+
+  it("uses text-only payloads and disables thinking for DeepSeek", async () => {
+    const { fn, calls } = mockFetch([
+      { choices: [{ message: { content: '{"bash":{"command":"ls ~/workspace"}}' } }] },
+    ]);
+    const a = new GenericAdapter(
+      init(fn, { model: "deepseek-v4-flash", baseUrl: "https://api.deepseek.com/v1" }),
+    );
+    const d = await a.start("search google", SCREENSHOT);
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({ tool: "bash" });
+    expect(typeof calls[0]!.body.messages.at(-1).content).toBe("string");
+    expect(String(calls[0]!.body.messages.at(-1).content)).toContain("text-only");
+    expect(calls[0]!.body.thinking).toEqual({ type: "disabled" });
+    expect(String(calls[0]!.body.messages[0].content)).toContain("cannot receive screenshots");
+  });
+
+  it("retries without images when the endpoint rejects image_url", async () => {
+    const calls: { body: any }[] = [];
+    let i = 0;
+    const fn = vi.fn(async (_url: any, init?: any) => {
+      const body = JSON.parse(init?.body ?? "{}");
+      calls.push({ body });
+      i += 1;
+      if (i === 1) {
+        return new Response(
+          JSON.stringify({ error: { message: "unknown variant `image_url`, expected `text`" } }),
+          { status: 400, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"done":true,"message":"ok"}' } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as unknown as typeof fetch;
+    const a = new GenericAdapter(init(fn, { model: "local-text", baseUrl: "http://127.0.0.1:9/v1" }));
+    const d = await a.start("task", SCREENSHOT);
+    expect(d).toEqual({ kind: "final", text: "ok" });
+    expect(calls.length).toBe(2);
+    expect(typeof calls[1]!.body.messages.find((m: { role: string }) => m.role === "user").content).toBe("string");
+  });
 });
