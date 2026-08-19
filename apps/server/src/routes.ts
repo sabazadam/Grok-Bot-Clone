@@ -466,7 +466,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/routines/:id/run", async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!store.getRoutine(id)) return reply.code(404).send({ error: "not found" });
-    const ok = runRoutineNow(id);
+    const ok = runRoutineNow(id, { force: true });
     return { ok };
   });
 

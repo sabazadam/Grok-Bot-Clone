@@ -84,6 +84,38 @@ describe("agent store", () => {
     expect(store.listDueRoutines(Date.now() + 31 * 60_000).map((x) => x.id)).toContain(r.id);
   });
 
+  it("does not re-list a routine that is already running, then reclamps after an overrun", () => {
+    const a = makeAgent({ name: "Cron" });
+    const r = store.createRoutine({
+      agentId: a.id,
+      name: "Tight loop",
+      prompt: "Check mentions",
+      intervalMinutes: 1,
+    });
+    store.markRoutineRan(r.id, "running");
+    const farFuture = Date.now() + 10 * 60_000;
+    expect(store.listDueRoutines(farFuture).map((x) => x.id)).not.toContain(r.id);
+
+    const finished = store.markRoutineFinished(r.id, "ok");
+    expect(finished?.lastStatus).toBe("ok");
+    expect(finished?.nextRunAt).toBeGreaterThan(Date.now());
+    expect(store.listDueRoutines(Date.now()).map((x) => x.id)).not.toContain(r.id);
+  });
+
+  it("clears leftover running flags after a restart", () => {
+    const a = makeAgent({ name: "Restart" });
+    const r = store.createRoutine({
+      agentId: a.id,
+      name: "Digest",
+      prompt: "Inbox",
+      intervalMinutes: 30,
+    });
+    store.markRoutineRan(r.id, "running");
+    const cleared = store.clearStaleRoutineRuns();
+    expect(cleared.map((x) => x.id)).toContain(r.id);
+    expect(store.getRoutine(r.id)?.lastStatus).toBe("failed");
+  });
+
   it("accepts a natural-language morning schedule", () => {
     const a = makeAgent({ name: "Piper" });
     const r = store.createRoutine({

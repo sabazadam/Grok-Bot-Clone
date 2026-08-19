@@ -6,9 +6,10 @@ import { runAgentTask } from "./runner.js";
 import { composeSkillPrompt } from "./dispatch.js";
 import { newTurnBudget } from "./orchestrator.js";
 
-export function runRoutineNow(routineId: string): boolean {
+export function runRoutineNow(routineId: string, opts?: { force?: boolean }): boolean {
   const routine = store.getRoutine(routineId);
   if (!routine) return false;
+  if (!opts?.force && routine.lastStatus === "running") return false;
   const agent = store.getAgent(routine.agentId);
   if (!agent) return false;
   const conv = store.ensureDirectConversation(agent.id);
@@ -32,15 +33,22 @@ export function runRoutineNow(routineId: string): boolean {
   const latest = store.getRoutine(routine.id);
   if (latest) broadcast({ type: "routine_updated", routine: latest });
 
-  enqueue(agent.id, () =>
-    runAgentTask({
-      agentId: agent.id,
-      conversationId: conv.id,
-      prompt,
-      rootMessageId: notice.id,
-      triggeredBy: { kind: "user" },
-    }),
-  );
+  enqueue(agent.id, async () => {
+    let status: "ok" | "failed" = "ok";
+    try {
+      await runAgentTask({
+        agentId: agent.id,
+        conversationId: conv.id,
+        prompt,
+        rootMessageId: notice.id,
+        triggeredBy: { kind: "user" },
+      });
+    } catch {
+      status = "failed";
+    }
+    const done = store.markRoutineFinished(routine.id, status);
+    if (done) broadcast({ type: "routine_updated", routine: done });
+  });
   return true;
 }
 

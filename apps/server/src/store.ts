@@ -860,7 +860,8 @@ export function listDueRoutines(now: number): Routine[] {
   return getDb()
     .prepare(`SELECT * FROM routines WHERE enabled=1 AND next_run_at<=?`)
     .all(now)
-    .map(rowToRoutine);
+    .map(rowToRoutine)
+    .filter((r) => r.lastStatus !== "running");
 }
 
 export function markRoutineRan(id: string, status: "ok" | "failed" | "running"): Routine | undefined {
@@ -873,6 +874,30 @@ export function markRoutineRan(id: string, status: "ok" | "failed" | "running"):
     lastStatus: status,
     nextRunAt: nextRunAt(schedule, now, cur.timezone || config.browserTimezone),
   });
+}
+
+/** Mark a run finished without stacking another interval while this one overran. */
+export function markRoutineFinished(id: string, status: "ok" | "failed"): Routine | undefined {
+  const cur = getRoutine(id);
+  if (!cur) return undefined;
+  const now = Date.now();
+  const schedule = cur.schedule ?? { kind: "interval" as const, everyMinutes: cur.intervalMinutes };
+  const timezone = cur.timezone || config.browserTimezone;
+  return updateRoutine(id, {
+    lastStatus: status,
+    nextRunAt: cur.nextRunAt > now ? cur.nextRunAt : nextRunAt(schedule, now, timezone),
+  });
+}
+
+/** After a process restart, in-memory queues are empty so "running" is stale. */
+export function clearStaleRoutineRuns(): Routine[] {
+  const changed: Routine[] = [];
+  for (const routine of listRoutines()) {
+    if (routine.lastStatus !== "running") continue;
+    const next = markRoutineFinished(routine.id, "failed");
+    if (next) changed.push(next);
+  }
+  return changed;
 }
 
 // ── plugins / connectors ────────────────────────────────────────────────
