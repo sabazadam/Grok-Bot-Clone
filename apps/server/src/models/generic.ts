@@ -28,6 +28,7 @@ You control the computer by replying with EXACTLY ONE JSON object per turn — n
 {"thought":"...","create_routine":{"name":"...","prompt":"...","schedule":"every morning","skillName":"optional"}}
 {"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now
 {"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}
+{"thought":"...","call_plugin":{"pluginId":"id-or-name","toolName":"tool","arguments":{}}}
 {"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed
 
 Thoughts stay internal — they are not posted to chat. Stay silent while you work on the computer. Message only when necessary and related to the task.
@@ -265,6 +266,15 @@ export class GenericAdapter implements ModelAdapter {
     } else if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
       const s = obj.send_message_to_agent as Record<string, unknown>;
       inv = { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };
+    } else if (obj.call_plugin && typeof obj.call_plugin === "object") {
+      const p = obj.call_plugin as Record<string, unknown>;
+      inv = {
+        id,
+        tool: "call_plugin",
+        pluginId: String(p.pluginId ?? p.plugin ?? ""),
+        toolName: String(p.toolName ?? p.name ?? ""),
+        arguments: p.arguments && typeof p.arguments === "object" ? (p.arguments as Record<string, unknown>) : {},
+      };
     }
 
     if (!inv) {

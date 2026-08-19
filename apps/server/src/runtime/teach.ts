@@ -40,6 +40,7 @@ export function getTeachSession(agentId: string): Omit<TeachSession, "timer"> | 
 export async function startTeach(agentId: string, name: string, notes: string): Promise<Omit<TeachSession, "timer">> {
   const existing = sessions.get(agentId);
   if (existing?.timer) clearInterval(existing.timer);
+  await service.makeRoomForComputer(agentId);
   await computerManager.ensureRunning(agentId);
   setTakeover(agentId, true);
   service.setStatus(agentId, "idle");

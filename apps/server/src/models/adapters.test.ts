@@ -252,6 +252,30 @@ describe("GenericAdapter", () => {
     expect(d.invocations[0]).toMatchObject({ tool: "send_message", text: "Need you to take over for 2FA." });
   });
 
+  it("parses call_plugin so xAI/generic teammates can use connectors", async () => {
+    const { fn } = mockFetch([
+      {
+        choices: [
+          {
+            message: {
+              content:
+                '{"thought":"use the hook","call_plugin":{"pluginId":"Status hook","toolName":"ping","arguments":{"q":"inbox"}}}',
+            },
+          },
+        ],
+      },
+    ]);
+    const a = new GenericAdapter(init(fn, { model: "grok-4", baseUrl: "https://api.x.ai/v1" }));
+    const d = await a.start("check the connector", SCREENSHOT);
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({
+      tool: "call_plugin",
+      pluginId: "Status hook",
+      toolName: "ping",
+      arguments: { q: "inbox" },
+    });
+  });
+
   it("sends screenshots as image_url for vision endpoints", async () => {
     const { fn, calls } = mockFetch([
       { choices: [{ message: { content: '{"done":true,"message":"ok"}' } }] },
