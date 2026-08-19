@@ -32,6 +32,7 @@ const agentBody = z.object({
   model: z.string().min(1).max(120),
   collaborationEnabled: z.boolean().default(true),
   stealthBrowsing: z.boolean().default(true),
+  browserEngine: z.enum(["chromium", "camoufox"]).optional(),
   isTeamLead: z.boolean().default(false),
   team: z.string().max(40).default(""),
   agentKind: z.enum(["standard", "specialist"]).optional(),
@@ -103,6 +104,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       dockerAvailable: await computerManager.dockerAvailable(),
       imageAvailable: await computerManager.imageAvailable(),
       maxRunningComputers: config.maxRunningComputers,
+      browserEngineDefault: config.browserEngineDefault === "camoufox" ? "camoufox" : "chromium",
     };
   });
 

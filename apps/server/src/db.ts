@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
   model TEXT NOT NULL,
   collaboration_enabled INTEGER NOT NULL DEFAULT 1,
   stealth_browsing INTEGER NOT NULL DEFAULT 1,
+  browser_engine TEXT NOT NULL DEFAULT 'chromium',
   hidden INTEGER NOT NULL DEFAULT 0,
   is_team_lead INTEGER NOT NULL DEFAULT 0,
   team TEXT NOT NULL DEFAULT '',
@@ -193,6 +194,9 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("tool_allow")) {
     d.exec(`ALTER TABLE agents ADD COLUMN tool_allow TEXT`);
+  }
+  if (!cols.has("browser_engine")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium'`);
   }
   const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
   if (routineCols.size > 0 && !routineCols.has("schedule_json")) {

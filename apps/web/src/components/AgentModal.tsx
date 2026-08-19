@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Agent, FaceShape, Provider, ToolPolicyName } from "@grokbot/shared";
-import { FACE_COLORS, FACE_SHAPES, TOOL_POLICY_LABELS } from "@grokbot/shared";
+import type { Agent, BrowserEngine, FaceShape, Provider, ToolPolicyName } from "@grokbot/shared";
+import { BROWSER_ENGINE_LABELS, FACE_COLORS, FACE_SHAPES, TOOL_POLICY_LABELS } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 import { BotFace, shapeForAgent } from "./Avatar";
@@ -30,6 +30,9 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
   const [model, setModel] = useState(existing?.model ?? "");
   const [collaborationEnabled, setCollaborationEnabled] = useState(existing?.collaborationEnabled ?? true);
   const [stealthBrowsing, setStealthBrowsing] = useState(existing?.stealthBrowsing ?? true);
+  const [browserEngine, setBrowserEngine] = useState<BrowserEngine>(
+    existing?.browserEngine ?? (state.config?.browserEngineDefault ?? "chromium"),
+  );
   const [isTeamLead, setIsTeamLead] = useState(existing?.isTeamLead ?? false);
   const [team, setTeam] = useState(existing?.team ?? "");
   const [toolPolicy, setToolPolicy] = useState<ToolPolicyName>(existing?.toolPolicy ?? "full");
@@ -59,6 +62,7 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
         model: model.trim(),
         collaborationEnabled,
         stealthBrowsing,
+        browserEngine,
         isTeamLead,
         team: team.trim(),
         toolPolicy,
@@ -255,10 +259,28 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
           <input type="checkbox" checked={collaborationEnabled} onChange={(e) => setCollaborationEnabled(e.target.checked)} className="h-4 w-4" />
           May message other agents (collaboration)
         </label>
-        <label className="mb-4 flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
+        <label className="mb-3 flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
           <input type="checkbox" checked={stealthBrowsing} onChange={(e) => setStealthBrowsing(e.target.checked)} className="h-4 w-4" />
           Stealth browsing <span style={{ color: "var(--muted)" }}>(anti-fingerprint: realistic UA, spoofed WebGL, hidden automation signals)</span>
         </label>
+
+        <div className="mb-4">
+          <label className={label} style={labelStyle}>
+            Browser engine <span className="font-normal" style={{ color: "var(--muted)" }}>(the live desktop is unchanged; only the browser binary differs)</span>
+          </label>
+          <select value={browserEngine} onChange={(e) => setBrowserEngine(e.target.value as BrowserEngine)} className={field} style={fieldStyle}>
+            {(Object.keys(BROWSER_ENGINE_LABELS) as BrowserEngine[]).map((eng) => (
+              <option key={eng} value={eng}>
+                {BROWSER_ENGINE_LABELS[eng]}
+              </option>
+            ))}
+          </select>
+          {browserEngine === "camoufox" && (
+            <p className="mt-1 text-[11px]" style={{ color: "var(--muted)" }}>
+              Engine-level anti-detect (Firefox-based). Residential proxies + a consistent profile are still recommended for the hardest sites.
+            </p>
+          )}
+        </div>
 
         {error && <p className="mb-3 text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
 

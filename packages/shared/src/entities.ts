@@ -80,6 +80,18 @@ export const FACE_COLORS = [
 export type AgentStatus = "off" | "starting" | "idle" | "working" | "waiting_approval" | "error";
 
 /**
+ * Which browser binary the agent's computer uses.
+ *  - "chromium" — the bundled Chromium + JS stealth extension (default).
+ *  - "camoufox" — a Firefox-based, engine-level anti-detect browser for hard sites.
+ */
+export type BrowserEngine = "chromium" | "camoufox";
+
+export const BROWSER_ENGINE_LABELS: Record<BrowserEngine, string> = {
+  chromium: "Chromium (default)",
+  camoufox: "Camoufox (recommended for hard sites)",
+};
+
+/**
  * How an agent came to exist / how it is managed.
  *  - "standard"   — a normal teammate you created.
  *  - "specialist" — a permanent teammate spawned by a Team Lead via delegation. Kept in the roster
@@ -142,6 +154,8 @@ export interface Agent {
   collaborationEnabled: boolean;
   /** Use the anti-detection / fingerprint-hardened browser for this agent's computer. */
   stealthBrowsing: boolean;
+  /** Which browser engine this agent's computer uses (Chromium default, or Camoufox for hard sites). */
+  browserEngine: BrowserEngine;
   /** Hidden from the sidebar (archived) — conversation and computer are kept. */
   hidden: boolean;
   /**

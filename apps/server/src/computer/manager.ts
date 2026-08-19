@@ -301,14 +301,16 @@ export class ComputerManager {
    */
   async syncBrowserConfig(
     agentId: string,
-    opts: { stealth: boolean; userAgent: string; timezone: string; locale: string },
+    opts: { stealth: boolean; userAgent: string; timezone: string; locale: string; engine?: string; camouConfig?: string },
   ): Promise<void> {
     const esc = (s: string) => s.replace(/'/g, "'\\''");
     const content = [
       `STEALTH=${opts.stealth ? "1" : "0"}`,
+      `ENGINE='${esc(opts.engine ?? "chromium")}'`,
       `USER_AGENT='${esc(opts.userAgent)}'`,
       `TZ='${esc(opts.timezone)}'`,
       `LOCALE='${esc(opts.locale)}'`,
+      `CAMOU_CONFIG='${esc(opts.camouConfig ?? "")}'`,
     ].join("\n");
     const cmd = `mkdir -p ~/.config/grokbot && cat > ~/.config/grokbot/browser.env <<'GBEOF'\n${content}\nGBEOF`;
     try {

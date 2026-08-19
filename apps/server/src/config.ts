@@ -57,6 +57,8 @@ export const config = {
   ),
   browserTimezone: env("BROWSER_TIMEZONE", "America/New_York"),
   browserLocale: env("BROWSER_LOCALE", "en-US"),
+  /** Default browser engine for new agents: "chromium" (default) or "camoufox" (hard sites). */
+  browserEngineDefault: env("BROWSER_ENGINE", "chromium"),
 
   /** Max computer-use loop steps per task */
   maxTaskSteps: Number(env("MAX_TASK_STEPS", "60")),

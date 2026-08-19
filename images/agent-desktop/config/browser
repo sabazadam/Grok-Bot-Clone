@@ -1,17 +1,38 @@
 #!/bin/bash
 # GrokBot browser launcher.
 #
-# Sources ~/.config/grokbot/browser.env (written by the server) to decide whether
-# to run in stealth / anti-fingerprint mode. When STEALTH=1 (default) it applies a
-# realistic user-agent, locale, timezone, and loads the bundled fingerprint-hardening
-# extension. Set STEALTH=0 (or use `browser-plain`) for a vanilla launch.
+# Sources ~/.config/grokbot/browser.env (written by the server) to decide the browser ENGINE and
+# whether to run in stealth / anti-fingerprint mode. Engines:
+#   chromium (default) — bundled Chromium + the JS stealth extension when STEALTH=1.
+#   camoufox           — a Firefox-based, engine-level anti-detect browser for hard sites. Reads its
+#                        fingerprint config from CAMOU_CONFIG (JSON, written by the server).
+# Either way the browser is driven by OS-level input (xdotool), so navigator.webdriver stays false.
+# Set STEALTH=0 (or use `browser-plain`) for a vanilla Chromium launch.
 set -o allexport
 STEALTH=1
+ENGINE="chromium"
 USER_AGENT=""
 TZ=""
 LOCALE="en-US"
+CAMOU_CONFIG=""
 [ -f "$HOME/.config/grokbot/browser.env" ] && . "$HOME/.config/grokbot/browser.env"
 set +o allexport
+
+CAMOUFOX_BIN="/opt/camoufox/camoufox-bin"
+
+# ── Camoufox engine ──────────────────────────────────────────────────────
+if [ "$ENGINE" = "camoufox" ]; then
+  if [ -x "$CAMOUFOX_BIN" ]; then
+    [ -n "$TZ" ] && export TZ
+    PROFILE_DIR="$HOME/.config/camoufox"
+    mkdir -p "$PROFILE_DIR"
+    # CAMOU_CONFIG is consumed by Camoufox's C++ layer for fingerprint spoofing.
+    export CAMOU_CONFIG
+    export MOZ_ENABLE_WAYLAND=0
+    exec "$CAMOUFOX_BIN" --profile "$PROFILE_DIR" --no-remote "$@"
+  fi
+  echo "GrokBot: ENGINE=camoufox but $CAMOUFOX_BIN not found — falling back to Chromium." >&2
+fi
 
 # Base flags. --no-sandbox / --disable-dev-shm-usage are required inside containers
 # and are NOT observable from page JavaScript.

@@ -18,8 +18,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pcmanfm mousepad \
     # actuator runtime + process supervisor
     python3 supervisor \
-    ca-certificates curl sudo locales \
+    ca-certificates curl sudo locales unzip \
+    # Firefox/Camoufox runtime libs not already pulled in by Chromium's dependency closure
+    libdbus-glib-1-2 libxt6 libgtk-3-0 \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Camoufox (engine-level anti-detect browser) ───────────────────────────
+# Installed by default (per product decision). Set --build-arg INSTALL_CAMOUFOX=0 to skip it for
+# offline / constrained CI builds; the browser wrapper then falls back to Chromium at runtime.
+# Bump CAMOUFOX_VERSION/CAMOUFOX_RELEASE to track upstream releases (daijro/camoufox).
+ARG INSTALL_CAMOUFOX=1
+ARG CAMOUFOX_VERSION=135.0.1
+ARG CAMOUFOX_RELEASE=beta.24
+ARG TARGETARCH
+RUN if [ "$INSTALL_CAMOUFOX" = "1" ]; then \
+      set -eux; \
+      arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+      case "$arch" in \
+        amd64|x86_64) cfarch="x86_64" ;; \
+        arm64|aarch64) cfarch="arm64" ;; \
+        *) echo "unsupported arch for Camoufox: $arch" >&2; exit 1 ;; \
+      esac; \
+      url="https://github.com/daijro/camoufox/releases/download/v${CAMOUFOX_VERSION}-${CAMOUFOX_RELEASE}/camoufox-${CAMOUFOX_VERSION}-${CAMOUFOX_RELEASE}-lin.${cfarch}.zip"; \
+      echo "Downloading Camoufox: $url"; \
+      mkdir -p /opt/camoufox; \
+      curl -fL --retry 3 -o /tmp/camoufox.zip "$url"; \
+      unzip -q /tmp/camoufox.zip -d /opt/camoufox; \
+      rm -f /tmp/camoufox.zip; \
+      if [ ! -x /opt/camoufox/camoufox-bin ] && [ -f /opt/camoufox/camoufox-bin ]; then chmod +x /opt/camoufox/camoufox-bin; fi; \
+      test -f /opt/camoufox/camoufox-bin || (echo "camoufox-bin missing after unzip" >&2; ls -la /opt/camoufox; exit 1); \
+      chmod +x /opt/camoufox/camoufox-bin; \
+    else \
+      echo "Skipping Camoufox install (INSTALL_CAMOUFOX=0)"; \
+    fi
 
 RUN sed -i 's/# en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen && locale-gen
 ENV LANG=en_US.UTF-8

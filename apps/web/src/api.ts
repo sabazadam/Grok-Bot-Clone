@@ -38,6 +38,7 @@ export interface AppConfig {
   dockerAvailable: boolean;
   imageAvailable: boolean;
   maxRunningComputers: number;
+  browserEngineDefault?: "chromium" | "camoufox";
 }
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {

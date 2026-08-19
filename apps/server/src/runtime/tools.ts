@@ -197,6 +197,7 @@ export async function executeInvocation(
         model: agent.model,
         collaborationEnabled: true,
         stealthBrowsing: agent.stealthBrowsing,
+        browserEngine: agent.browserEngine,
         isTeamLead: !!inv.isTeamLead,
       });
       const conv = store.getConversation(ctx.conversationId);

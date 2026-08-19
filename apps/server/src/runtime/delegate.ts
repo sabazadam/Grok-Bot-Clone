@@ -99,6 +99,7 @@ async function prepareChild(ctx: DelegateContext, spec: DelegateTaskSpec, childD
         model: parent.model,
         collaborationEnabled: true,
         stealthBrowsing: parent.stealthBrowsing,
+        browserEngine: parent.browserEngine,
         isTeamLead: false,
         team: parent.team,
         agentKind: "specialist",

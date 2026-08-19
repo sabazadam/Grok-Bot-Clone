@@ -42,6 +42,7 @@ function rowToAgent(r: any): Agent {
     model: r.model,
     collaborationEnabled: !!r.collaboration_enabled,
     stealthBrowsing: !!r.stealth_browsing,
+    browserEngine: (r.browser_engine as Agent["browserEngine"]) || "chromium",
     hidden: !!r.hidden,
     isTeamLead: !!r.is_team_lead,
     team: (r.team as string) ?? "",
@@ -142,6 +143,7 @@ export interface NewAgent {
   model: string;
   collaborationEnabled: boolean;
   stealthBrowsing: boolean;
+  browserEngine?: Agent["browserEngine"];
   isTeamLead?: boolean;
   team?: string;
   agentKind?: Agent["agentKind"];
@@ -154,8 +156,8 @@ export function createAgent(a: NewAgent): Agent {
   const id = nanoid(10);
   getDb()
     .prepare(
-      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, avatar_shape, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, team, agent_kind, parent_agent_id, tool_policy, tool_allow, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'off', ?)`,
+      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, avatar_shape, provider, model, collaboration_enabled, stealth_browsing, browser_engine, hidden, is_team_lead, team, agent_kind, parent_agent_id, tool_policy, tool_allow, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 'off', ?)`,
     )
     .run(
       id,
@@ -168,6 +170,7 @@ export function createAgent(a: NewAgent): Agent {
       a.model,
       a.collaborationEnabled ? 1 : 0,
       a.stealthBrowsing ? 1 : 0,
+      a.browserEngine ?? "chromium",
       a.isTeamLead ? 1 : 0,
       a.team?.trim() ?? "",
       a.agentKind ?? "standard",
@@ -234,7 +237,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
   const merged = { ...cur, ...patch };
   getDb()
     .prepare(
-      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, avatar_shape=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=?, team=?, agent_kind=?, parent_agent_id=?, tool_policy=?, tool_allow=? WHERE id=?`,
+      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, avatar_shape=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, browser_engine=?, is_team_lead=?, team=?, agent_kind=?, parent_agent_id=?, tool_policy=?, tool_allow=? WHERE id=?`,
     )
     .run(
       merged.name,
@@ -246,6 +249,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
       merged.model,
       merged.collaborationEnabled ? 1 : 0,
       merged.stealthBrowsing ? 1 : 0,
+      merged.browserEngine ?? "chromium",
       merged.isTeamLead ? 1 : 0,
       merged.team?.trim() ?? "",
       merged.agentKind ?? "standard",

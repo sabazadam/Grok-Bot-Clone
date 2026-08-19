@@ -4,16 +4,23 @@ import * as store from "../store.js";
 import { computerManager } from "../computer/manager.js";
 import { config } from "../config.js";
 import { broadcast } from "../bus.js";
+import { camouConfig, normalizeEngine } from "../runtime/browserEngine.js";
 
 /** Push an agent's browser settings into its running container. */
 export async function syncBrowserConfig(agentId: string): Promise<void> {
   const agent = store.getAgent(agentId);
   if (!agent) return;
+  const engine = normalizeEngine(agent.browserEngine);
   await computerManager.syncBrowserConfig(agentId, {
     stealth: agent.stealthBrowsing,
+    engine,
     userAgent: config.browserUserAgent,
     timezone: config.browserTimezone,
     locale: config.browserLocale,
+    camouConfig:
+      engine === "camoufox"
+        ? camouConfig({ userAgent: config.browserUserAgent, timezone: config.browserTimezone, locale: config.browserLocale })
+        : "",
   });
 }
 
@@ -132,6 +139,7 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     model: src.model,
     collaborationEnabled: src.collaborationEnabled,
     stealthBrowsing: src.stealthBrowsing,
+    browserEngine: src.browserEngine,
     isTeamLead: src.isTeamLead,
     team: src.team,
     // A manual duplicate is a normal top-level teammate, not a spawned specialist.

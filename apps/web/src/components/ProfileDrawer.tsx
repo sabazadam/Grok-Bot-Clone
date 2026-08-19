@@ -79,6 +79,10 @@ export function ProfileDrawer({
             <span style={{ color: "var(--text)" }}>{agent.stealthBrowsing ? "on (anti-fingerprint)" : "off"}</span>
           </div>
           <div className="mb-1 flex justify-between">
+            <span style={{ color: "var(--muted)" }}>Browser engine</span>
+            <span style={{ color: "var(--text)" }}>{agent.browserEngine === "camoufox" ? "Camoufox" : "Chromium"}</span>
+          </div>
+          <div className="mb-1 flex justify-between">
             <span style={{ color: "var(--muted)" }}>Tool policy</span>
             <span style={{ color: "var(--text)" }}>
               {TOOL_POLICY_LABELS[agent.toolPolicy]}
