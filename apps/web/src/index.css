@@ -128,41 +128,48 @@ body {
 @keyframes gb-breathe {
   0%,
   100% {
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
   }
-  50% {
-    transform: scale(1.045);
+  35% {
+    transform: scale(1.05) rotate(-2deg);
+  }
+  70% {
+    transform: scale(1.03) rotate(2deg);
   }
 }
 @keyframes gb-blink {
   0%,
-  88%,
+  86%,
   100% {
     transform: scaleY(1);
   }
-  92% {
-    transform: scaleY(0.12);
+  90% {
+    transform: scaleY(0.08);
   }
 }
 @keyframes gb-glance {
   0%,
+  18%,
   100% {
     transform: translateX(0);
   }
-  30% {
+  28% {
     transform: translateX(3px);
   }
-  62% {
+  48% {
     transform: translateX(-2.5px);
+  }
+  62% {
+    transform: translateX(1.5px);
   }
 }
 @keyframes gb-write-bob {
   0%,
   100% {
-    transform: translateY(0) scale(1, 1);
+    transform: translateY(0) scale(1, 1) rotate(-1deg);
   }
   50% {
-    transform: translateY(1px) scale(1.03, 0.97);
+    transform: translateY(2px) scale(1.04, 0.96) rotate(2deg);
   }
 }
 @keyframes gb-talk {
@@ -170,22 +177,25 @@ body {
   100% {
     transform: scale(1, 1) rotate(0deg);
   }
-  35% {
-    transform: scale(1.07, 0.93) rotate(-2deg);
+  25% {
+    transform: scale(1.08, 0.92) rotate(-4deg);
   }
-  70% {
-    transform: scale(0.96, 1.05) rotate(2deg);
+  55% {
+    transform: scale(0.94, 1.07) rotate(3deg);
+  }
+  80% {
+    transform: scale(1.03, 0.97) rotate(-1deg);
   }
 }
 @keyframes gb-wait-pulse {
   0%,
   100% {
     filter: brightness(1);
-    transform: scale(1);
+    transform: scale(1) rotate(0deg);
   }
   50% {
-    filter: brightness(1.08);
-    transform: scale(1.06);
+    filter: brightness(1.1);
+    transform: scale(1.07) rotate(-3deg);
   }
 }
 

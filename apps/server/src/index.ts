@@ -1,18 +1,33 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
-import { config, ensureDataDirs } from "./config.js";
+import { config, ensureDataDirs, liveModelConfig } from "./config.js";
 import { registerRoutes } from "./routes.js";
 import { getDb } from "./db.js";
 import { computerManager } from "./computer/manager.js";
 import * as store from "./store.js";
 import * as service from "./agents/service.js";
+import { broadcast } from "./bus.js";
 import { startScheduler } from "./runtime/scheduler.js";
 
 async function main() {
   ensureDataDirs();
   getDb();
   service.reconcileStatuses();
+  const live = liveModelConfig();
+  if (live) {
+    const promoted = store.promoteMockAgents(live.provider, live.model);
+    for (const agent of promoted) {
+      broadcast({ type: "agent_updated", agent });
+    }
+  }
+  for (const agent of store.assignMissingFaceShapes()) {
+    broadcast({ type: "agent_updated", agent });
+  }
+  void computerManager
+    .reapOrphans(store.listAgents().map((a) => a.id))
+    .then(() => computerManager.hydrateLastUsed())
+    .catch(() => undefined);
 
   const app = Fastify({ logger: { level: "info" }, bodyLimit: 120 * 1024 * 1024 });
   await app.register(cors, { origin: true });

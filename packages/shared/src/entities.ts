@@ -18,6 +18,25 @@ export const PROVIDER_DEFAULT_MODELS: Record<Provider, string> = {
   generic: "grok-4",
 };
 
+/** Official Grok Bot face shapes (Bot picker). */
+export const FACE_SHAPES = ["circle", "blob", "squircle", "pill", "triangle", "hexagon", "cloud", "drop"] as const;
+export type FaceShape = (typeof FACE_SHAPES)[number];
+
+/** Official-style Grok Bot color chips. */
+export const FACE_COLORS = [
+  "#1A1A1A",
+  "#6B4F3A",
+  "#D6453D",
+  "#F46A1B",
+  "#C48A3A",
+  "#3D8B5A",
+  "#2A9D8F",
+  "#3B82F6",
+  "#7C5CBF",
+  "#E56B8A",
+  "#8A8A8E",
+] as const;
+
 export type AgentStatus = "off" | "starting" | "idle" | "working" | "waiting_approval" | "error";
 
 export interface Agent {
@@ -27,6 +46,8 @@ export interface Agent {
   /** Standing instructions / job description / boundaries. Part of the system prompt. */
   instructions: string;
   avatarColor: string;
+  /** Official Bot picker shape. Missing on older agents — UI hashes a stable fallback. */
+  avatarShape?: FaceShape;
   provider: Provider;
   model: string;
   /** May this agent message other agents? */

@@ -15,8 +15,10 @@ export function EmptyState({ onNewAgent }: { onNewAgent: () => void }) {
     <div className="flex flex-1 flex-col items-center justify-center px-8" style={{ color: "var(--text)" }}>
       <div className="mb-6 flex items-end gap-2">
         <BotFace color="#F46A1B" shape="circle" mood="idle" size={44} />
-        <BotFace color="#8B5A3C" shape="drop" mood="write" size={36} />
-        <BotFace color="#E56B8A" shape="squircle" mood="talk" size={32} />
+        <BotFace color="#3B82F6" shape="blob" mood="talk" size={38} />
+        <BotFace color="#E56B8A" shape="drop" mood="write" size={36} />
+        <BotFace color="#7C5CBF" shape="cloud" mood="idle" size={34} />
+        <BotFace color="#2A9D8F" shape="pill" mood="talk" size={32} />
         <BotFace color="#D6453D" shape="hexagon" mood="wait" size={28} />
       </div>
       <h2 className="text-2xl font-bold tracking-tight">Your AI teammates</h2>

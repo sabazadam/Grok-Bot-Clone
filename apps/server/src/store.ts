@@ -23,7 +23,7 @@ import type {
   TaskStatus,
   Attachment,
 } from "@grokbot/shared";
-import { formatSchedule, intervalMinutesOf, nextRunAt, parseSchedule, withWindowStart } from "@grokbot/shared";
+import { FACE_SHAPES, formatSchedule, intervalMinutesOf, nextRunAt, parseSchedule, withWindowStart, type FaceShape } from "@grokbot/shared";
 import { config } from "./config.js";
 import { getDb } from "./db.js";
 
@@ -36,6 +36,7 @@ function rowToAgent(r: any): Agent {
     roleTitle: r.role_title,
     instructions: r.instructions,
     avatarColor: r.avatar_color,
+    avatarShape: (r.avatar_shape as Agent["avatarShape"]) || undefined,
     provider: r.provider as Provider,
     model: r.model,
     collaborationEnabled: !!r.collaboration_enabled,
@@ -131,6 +132,7 @@ export interface NewAgent {
   roleTitle: string;
   instructions: string;
   avatarColor: string;
+  avatarShape?: Agent["avatarShape"];
   provider: Provider;
   model: string;
   collaborationEnabled: boolean;
@@ -143,8 +145,8 @@ export function createAgent(a: NewAgent): Agent {
   const id = nanoid(10);
   getDb()
     .prepare(
-      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, team, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'off', ?)`,
+      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, avatar_shape, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, team, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'off', ?)`,
     )
     .run(
       id,
@@ -152,6 +154,7 @@ export function createAgent(a: NewAgent): Agent {
       a.roleTitle,
       a.instructions,
       a.avatarColor,
+      a.avatarShape ?? null,
       a.provider,
       a.model,
       a.collaborationEnabled ? 1 : 0,
@@ -218,13 +221,14 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
   const merged = { ...cur, ...patch };
   getDb()
     .prepare(
-      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=?, team=? WHERE id=?`,
+      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, avatar_shape=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=?, team=? WHERE id=?`,
     )
     .run(
       merged.name,
       merged.roleTitle,
       merged.instructions,
       merged.avatarColor,
+      merged.avatarShape ?? null,
       merged.provider,
       merged.model,
       merged.collaborationEnabled ? 1 : 0,
@@ -238,6 +242,37 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
 
 export function setAgentStatus(id: string, status: AgentStatus): void {
   getDb().prepare(`UPDATE agents SET status=? WHERE id=?`).run(status, id);
+}
+
+/** Switch leftover mock-scripted teammates onto a live provider once a key exists. */
+export function promoteMockAgents(provider: Provider, model: string): Agent[] {
+  const changed: Agent[] = [];
+  for (const agent of listAgents()) {
+    if (agent.model !== "mock-scripted") continue;
+    const next = updateAgent(agent.id, { provider, model });
+    if (next) changed.push(next);
+  }
+  return changed;
+}
+
+/** Persist an official Bot picker shape so the roster looks distinct. */
+export function assignMissingFaceShapes(): Agent[] {
+  const agents = listAgents();
+  const used = new Set(agents.map((a) => a.avatarShape).filter((s): s is FaceShape => !!s));
+  const changed: Agent[] = [];
+  let fallback = 0;
+  for (const agent of agents) {
+    if (agent.avatarShape) continue;
+    let shape = FACE_SHAPES.find((s) => !used.has(s));
+    if (!shape) {
+      shape = FACE_SHAPES[fallback % FACE_SHAPES.length]!;
+      fallback += 1;
+    }
+    used.add(shape);
+    const next = updateAgent(agent.id, { avatarShape: shape });
+    if (next) changed.push(next);
+  }
+  return changed;
 }
 
 export function setAgentHidden(id: string, hidden: boolean): Agent | undefined {

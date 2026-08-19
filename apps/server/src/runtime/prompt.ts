@@ -124,7 +124,12 @@ export function recentTranscript(conversationId: string, agentId: string, limit 
 }
 
 /** Per-turn task prompt. Instructs the model to stay silent on sandbox work. */
-export function buildTaskPrompt(agent: Agent, conversation: Conversation, opts: TaskPromptOptions): string {
+export function buildTaskPrompt(
+  agent: Agent,
+  conversation: Conversation,
+  opts: TaskPromptOptions,
+  hint?: { openedUrl?: string },
+): string {
   const parts: string[] = [];
   const transcript = recentTranscript(conversation.id, agent.id);
   if (transcript) {
@@ -142,6 +147,11 @@ export function buildTaskPrompt(agent: Agent, conversation: Conversation, opts: 
   } else {
     parts.push(
       `New message from the user:\n${opts.prompt}\n\nWork on this. Stay silent until you have a necessary, task-related update or a finished result.`,
+    );
+  }
+  if (hint?.openedUrl) {
+    parts.push(
+      `The desktop browser is already open at ${hint.openedUrl} so the user can watch. Fetch facts with curl/python (for weather, wttr.in or Open-Meteo is faster than scraping Google). Then finish with the answer. Do not reopen that URL or emit screenshot actions.`,
     );
   }
   return parts.join("\n");

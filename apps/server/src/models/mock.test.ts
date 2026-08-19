@@ -37,6 +37,15 @@ describe("MockAdapter reporting", () => {
     });
   });
 
+  it("opens Google for a natural search prompt", async () => {
+    const a = new MockAdapter(init);
+    const d1 = await a.start("New message from the user:\nopen google and search what is izmir weather today", "");
+    expect(d1.kind).toBe("act");
+    if (d1.kind !== "act") throw new Error();
+    expect(d1.invocations[0]?.tool).toBe("bash");
+    expect(String((d1.invocations[0] as { command?: string }).command)).toMatch(/google\.com\/search/);
+  });
+
   it("ACKs a teammate FYI that needs no action — no chat report", async () => {
     const a = new MockAdapter(init);
     const d = await a.start(

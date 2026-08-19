@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import type { Agent, Provider } from "@grokbot/shared";
+import type { Agent, FaceShape, Provider } from "@grokbot/shared";
+import { FACE_COLORS, FACE_SHAPES } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
+import { BotFace, shapeForAgent } from "./Avatar";
 
-const COLORS = ["#F46A1B", "#D6453D", "#8B5A3C", "#E56B8A", "#C48A3A", "#6B4F3A", "#E85D4C", "#5E5CE6"];
+const COLORS = [...FACE_COLORS];
 const ROLE_EXAMPLES = ["Researcher", "Chief of Staff", "Talent Scout", "Expense Manager", "Bug Reporter", "Trip Planner"];
 
 const field =
@@ -20,6 +22,10 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
   const [roleTitle, setRoleTitle] = useState(existing?.roleTitle ?? "");
   const [instructions, setInstructions] = useState(existing?.instructions ?? "");
   const [avatarColor, setAvatarColor] = useState(existing?.avatarColor ?? COLORS[Math.floor(Math.random() * COLORS.length)]!);
+  const [avatarShape, setAvatarShape] = useState<FaceShape>(
+    existing?.avatarShape ?? shapeForAgent(existing?.id ?? "new", existing?.name ?? "new"),
+  );
+  const [faceTab, setFaceTab] = useState<"bot" | "generate" | "upload">("bot");
   const [provider, setProvider] = useState<Provider>(existing?.provider ?? (providers.find((p) => p.hasKey)?.id || "anthropic"));
   const [model, setModel] = useState(existing?.model ?? "");
   const [collaborationEnabled, setCollaborationEnabled] = useState(existing?.collaborationEnabled ?? true);
@@ -41,7 +47,19 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
     setBusy(true);
     setError(null);
     try {
-      const body = { name: name.trim(), roleTitle: roleTitle.trim(), instructions, avatarColor, provider, model: model.trim(), collaborationEnabled, stealthBrowsing, isTeamLead, team: team.trim() };
+      const body = {
+        name: name.trim(),
+        roleTitle: roleTitle.trim(),
+        instructions,
+        avatarColor,
+        avatarShape,
+        provider,
+        model: model.trim(),
+        collaborationEnabled,
+        stealthBrowsing,
+        isTeamLead,
+        team: team.trim(),
+      };
       if (existing) {
         await api.updateAgent(existing.id, body);
         await refreshAgents();
@@ -111,18 +129,67 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
           style={fieldStyle}
         />
 
-        <div className="mb-3">
-          <label className={label} style={labelStyle}>Avatar</label>
-          <div className="flex gap-1.5">
-            {COLORS.map((c) => (
+        <div className="mb-4">
+          <div className="mb-2 flex gap-1 rounded-full p-0.5" style={{ background: "var(--surface)" }}>
+            {(["bot", "generate", "upload"] as const).map((tab) => (
               <button
-                key={c}
-                onClick={() => setAvatarColor(c)}
-                className="h-6 w-6 rounded-full"
-                style={{ backgroundColor: c, outline: avatarColor === c ? "2px solid var(--text)" : "none", outlineOffset: 2 }}
-              />
+                key={tab}
+                type="button"
+                onClick={() => {
+                  setFaceTab(tab);
+                  if (tab === "generate") {
+                    setAvatarShape(FACE_SHAPES[Math.floor(Math.random() * FACE_SHAPES.length)]!);
+                    setAvatarColor(COLORS[Math.floor(Math.random() * COLORS.length)]!);
+                  }
+                }}
+                className="flex-1 rounded-full px-3 py-1.5 text-[12px] font-semibold capitalize"
+                style={{
+                  background: faceTab === tab ? "var(--bg)" : "transparent",
+                  color: "var(--text)",
+                  boxShadow: faceTab === tab ? "var(--shadow)" : "none",
+                }}
+              >
+                {tab === "bot" ? "Bot" : tab === "generate" ? "Generate" : "Upload"}
+              </button>
             ))}
           </div>
+          {faceTab !== "upload" ? (
+            <>
+              <div className="mb-3 grid grid-cols-4 gap-2">
+                {FACE_SHAPES.map((shape) => (
+                  <button
+                    key={shape}
+                    type="button"
+                    onClick={() => setAvatarShape(shape)}
+                    className="grid place-items-center rounded-2xl p-2"
+                    style={{
+                      outline: avatarShape === shape ? "2px solid var(--text)" : "1px solid var(--border)",
+                      outlineOffset: 1,
+                      background: "var(--surface)",
+                    }}
+                    title={shape}
+                  >
+                    <BotFace color={avatarColor} shape={shape} mood="idle" size={44} />
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {COLORS.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setAvatarColor(c)}
+                    className="h-6 w-6 rounded-full"
+                    style={{ backgroundColor: c, outline: avatarColor === c ? "2px solid var(--text)" : "none", outlineOffset: 2 }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : (
+            <p className="rounded-xl px-3 py-3 text-[12px]" style={{ background: "var(--surface)", color: "var(--muted)" }}>
+              Custom photos are next. Use Bot or Generate for the official animated faces.
+            </p>
+          )}
         </div>
 
         <div className="mb-3 grid grid-cols-2 gap-3">

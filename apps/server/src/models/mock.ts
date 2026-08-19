@@ -83,6 +83,15 @@ export class MockAdapter implements ModelAdapter {
           command: `DISPLAY=:0 nohup /usr/local/bin/browser '${m[1]!.replace(/'/g, "")}' >/dev/null 2>&1 & sleep 5; echo opened`,
         });
         this.queue.push({ id: this.id(), tool: "computer", action: { type: "screenshot" } });
+      } else if ((m = line.match(/(?:open\s+)?google(?:\.com)?(?:\s+and)?\s+search\s+(.+)/i)) || (m = line.match(/search(?:\s+google)?(?:\s+for)?\s+(.+)/i))) {
+        const q = m[1]!.trim().replace(/[.!?]+$/, "");
+        const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+        this.queue.push({
+          id: this.id(),
+          tool: "bash",
+          command: `DISPLAY=:0 nohup /usr/local/bin/browser '${url}' >/dev/null 2>&1 & sleep 4; echo opened ${url}`,
+        });
+        this.queue.push({ id: this.id(), tool: "computer", action: { type: "screenshot" } });
       } else if ((m = line.match(/^run:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "bash", command: m[1]! });
       } else if ((m = line.match(/type into a terminal:\s*(.+)$/i))) {

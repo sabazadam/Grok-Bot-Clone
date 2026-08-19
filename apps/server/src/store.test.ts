@@ -21,6 +21,30 @@ function makeAgent(overrides: Partial<store.NewAgent> = {}) {
 }
 
 describe("agent store", () => {
+  it("persists an official face shape", () => {
+    const a = makeAgent({ name: "Facey", avatarShape: "cloud" });
+    expect(store.getAgent(a.id)?.avatarShape).toBe("cloud");
+    expect(store.updateAgent(a.id, { avatarShape: "pill" })?.avatarShape).toBe("pill");
+  });
+
+  it("promotes mock-scripted agents onto a live model", () => {
+    const a = makeAgent({ name: "Mocky", model: "mock-scripted", provider: "generic" });
+    const changed = store.promoteMockAgents("generic", "deepseek-v4-flash");
+    expect(changed.map((x) => x.id)).toContain(a.id);
+    expect(store.getAgent(a.id)?.model).toBe("deepseek-v4-flash");
+  });
+
+  it("assigns distinct official face shapes to agents that lack one", () => {
+    const a = makeAgent({ name: "NoFace" });
+    const b = makeAgent({ name: "AlsoNoFace", avatarColor: "#111111" });
+    const changed = store.assignMissingFaceShapes();
+    expect(changed.map((x) => x.id)).toEqual(expect.arrayContaining([a.id, b.id]));
+    const shapes = [store.getAgent(a.id)?.avatarShape, store.getAgent(b.id)?.avatarShape];
+    expect(shapes[0]).toBeTruthy();
+    expect(shapes[1]).toBeTruthy();
+    expect(shapes[0]).not.toBe(shapes[1]);
+  });
+
   it("creates and reads back stealth + hidden defaults", () => {
     const a = makeAgent();
     expect(a.stealthBrowsing).toBe(true);

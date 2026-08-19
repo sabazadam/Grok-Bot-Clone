@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Agent } from "@grokbot/shared";
 import { StoreProvider, useStore } from "./store";
 import { useTheme } from "./theme";
@@ -20,6 +20,7 @@ function Shell() {
   const [showNewAgent, setShowNewAgent] = useState(false);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [showComputer, setShowComputer] = useState(false);
+  const closedComputerRef = useRef(false);
   const [showProfile, setShowProfile] = useState(false);
   const [editAgent, setEditAgent] = useState(false);
   const [showPlugins, setShowPlugins] = useState(false);
@@ -68,6 +69,7 @@ function Shell() {
     if (state.selectedId && state.selectedId !== id) markSeen(state.selectedId);
     setHandoffId(null);
     setShowComputer(false);
+    closedComputerRef.current = false;
     setShowProfile(false);
     setEditAgent(false);
     setHighlightId(highlightMessageId);
@@ -84,7 +86,17 @@ function Shell() {
 
   useEffect(() => {
     setHandoffId(null);
+    closedComputerRef.current = false;
   }, [state.selectedId]);
+
+  useEffect(() => {
+    if (!hostAgent || closedComputerRef.current) return;
+    const live = state.liveSteps[hostAgent.id];
+    if (hostAgent.status === "working" || hostAgent.status === "starting" || Boolean(live)) {
+      setShowComputer(true);
+      setRailOpen(true);
+    }
+  }, [hostAgent, hostAgent?.id, hostAgent?.status, state.liveSteps]);
 
   useEffect(() => {
     if (!handoffId) return;
@@ -192,6 +204,7 @@ function Shell() {
               highlightMessageId={highlightId}
               onOpenHandoff={(id) => void openHandoff(id)}
               onOpenComputer={() => {
+                closedComputerRef.current = false;
                 setShowComputer(true);
                 setRailOpen(true);
               }}
@@ -205,13 +218,19 @@ function Shell() {
               <ComputerPanel
                 agents={[hostAgent]}
                 forceTakeover={showTeach}
-                onClose={() => setShowComputer(false)}
+                onClose={() => {
+                  closedComputerRef.current = true;
+                  setShowComputer(false);
+                }}
                 onTeach={() => setShowTeach(true)}
               />
             ) : (
               <WorkspacePanel
                 agent={hostAgent}
-                onExpandComputer={() => setShowComputer(true)}
+                onExpandComputer={() => {
+                  closedComputerRef.current = false;
+                  setShowComputer(true);
+                }}
                 onCreateRoutine={() => setShowProfile(true)}
                 onTeach={() => setShowTeach(true)}
                 onCollapse={() => setRailOpen(false)}
@@ -229,6 +248,7 @@ function Shell() {
           agent={hostAgent}
           onClose={() => setShowTeach(false)}
           onOpenComputer={() => {
+            closedComputerRef.current = false;
             setShowComputer(true);
             setRailOpen(true);
           }}

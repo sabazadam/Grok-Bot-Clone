@@ -94,4 +94,23 @@ describe("task prompt reporting policy", () => {
     expect(text).toMatch(/stay silent about routine actions/);
     expect(text).toMatch(/If no reply is needed, call task_complete with exactly "ACK"/);
   });
+
+  it("notes when the desktop browser is already open", () => {
+    const agent = makeAgent();
+    const conv = store.ensureDirectConversation(agent.id);
+    const text = buildTaskPrompt(
+      agent,
+      conv,
+      {
+        agentId: agent.id,
+        conversationId: conv.id,
+        prompt: "open google and search what is izmir weather today",
+        rootMessageId: "root",
+        triggeredBy: { kind: "user" },
+      },
+      { openedUrl: "https://www.google.com/search?q=what%20is%20izmir%20weather%20today" },
+    );
+    expect(text).toMatch(/already open at https:\/\/www\.google\.com\/search/);
+    expect(text).toMatch(/wttr\.in/);
+  });
 });

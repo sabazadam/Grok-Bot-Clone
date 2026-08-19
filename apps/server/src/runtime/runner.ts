@@ -20,6 +20,7 @@ import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
 import { communicationCaption, isSilentReply, shouldPostToolToChat } from "./report.js";
+import { inferBrowseUrls, openBrowserCommand } from "./browse.js";
 
 export interface RunTaskOptions {
   agentId: string;
@@ -57,8 +58,23 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   let failed = false;
 
   try {
+    await service.makeRoomForComputer(agent.id);
     await computerManager.ensureRunning(agent.id);
     await service.syncBrowserConfig(agent.id);
+    const browseUrls = inferBrowseUrls(opts.prompt);
+    const browseUrl = browseUrls[0];
+    if (browseUrls.length) {
+      try {
+        for (const url of browseUrls) {
+          await computerManager.exec(agent.id, openBrowserCommand(url), 20);
+        }
+        const caption = `Opened ${browseUrls.join(" and ")}`;
+        store.addTaskStep(task.id, 0, caption, JSON.stringify({ tool: "bash", command: "browser" }));
+        broadcast({ type: "task_step", taskId: task.id, agentId: agent.id, stepIndex: 0, caption });
+      } catch {
+        /* browser helper is best-effort; the model can still fetch via curl */
+      }
+    }
     if (opts.attachments?.length) {
       const { hostPathForAttachment } = await import("../uploads.js");
       for (const att of opts.attachments) {
@@ -76,7 +92,10 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     const { pluginCatalog } = await import("../plugins/runtime.js");
     const extras = await pluginCatalog().catch(() => "");
     const adapter = createAdapter(agent, buildSystemPrompt(agent, extras));
-    let decision: AgentDecision = await adapter.start(buildTaskPrompt(agent, conversation, opts), firstShot.toString("base64"));
+    let decision: AgentDecision = await adapter.start(
+      buildTaskPrompt(agent, conversation, opts, browseUrl ? { openedUrl: browseUrl } : undefined),
+      firstShot.toString("base64"),
+    );
 
     let stepIndex = 0;
 

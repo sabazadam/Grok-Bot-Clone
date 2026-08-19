@@ -137,7 +137,9 @@ export function ComputerPanel({
             src={vncUrl}
             className="absolute inset-0 h-full w-full"
             title="Agent computer"
-            allow="fullscreen; clipboard-read; clipboard-write"
+            allow="fullscreen *; clipboard-read *; clipboard-write *"
+            allowFullScreen
+            referrerPolicy="no-referrer"
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center gap-3" style={{ color: "var(--muted)" }}>

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS agents (
   role_title TEXT NOT NULL DEFAULT '',
   instructions TEXT NOT NULL DEFAULT '',
   avatar_color TEXT NOT NULL DEFAULT '#6366f1',
+  avatar_shape TEXT,
   provider TEXT NOT NULL,
   model TEXT NOT NULL,
   collaboration_enabled INTEGER NOT NULL DEFAULT 1,
@@ -155,6 +156,9 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("team")) {
     d.exec(`ALTER TABLE agents ADD COLUMN team TEXT NOT NULL DEFAULT ''`);
+  }
+  if (!cols.has("avatar_shape")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN avatar_shape TEXT`);
   }
   const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
   if (routineCols.size > 0 && !routineCols.has("schedule_json")) {

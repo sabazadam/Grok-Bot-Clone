@@ -4,8 +4,8 @@ import path from "node:path";
 import fs from "node:fs";
 import { z } from "zod";
 import fastifyStatic from "@fastify/static";
-import { PROVIDER_DEFAULT_MODELS, PROVIDER_LABELS, type Provider } from "@grokbot/shared";
-import { config } from "./config.js";
+import { FACE_SHAPES, PROVIDER_LABELS, type Provider } from "@grokbot/shared";
+import { config, defaultModelFor } from "./config.js";
 import * as store from "./store.js";
 import * as service from "./agents/service.js";
 import { computerManager } from "./computer/manager.js";
@@ -26,6 +26,7 @@ const agentBody = z.object({
   roleTitle: z.string().max(80).default(""),
   instructions: z.string().max(8000).default(""),
   avatarColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#6366f1"),
+  avatarShape: z.enum(FACE_SHAPES).optional(),
   provider: providerEnum,
   model: z.string().min(1).max(120),
   collaborationEnabled: z.boolean().default(true),
@@ -84,7 +85,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         id,
         label: PROVIDER_LABELS[id],
         hasKey: keyPresent[id],
-        defaultModel: PROVIDER_DEFAULT_MODELS[id],
+        defaultModel: defaultModelFor(id),
       })),
       dockerAvailable: await computerManager.dockerAvailable(),
       imageAvailable: await computerManager.imageAvailable(),

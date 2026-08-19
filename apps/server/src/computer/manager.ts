@@ -97,6 +97,56 @@ export class ComputerManager {
     }
   }
 
+  private agentIdFromContainerName(name: string): string | undefined {
+    const clean = name.replace(/^\//, "");
+    if (!clean.startsWith(CONTAINER_PREFIX) || clean.endsWith(VOLUME_SUFFIX)) return undefined;
+    return clean.slice(CONTAINER_PREFIX.length);
+  }
+
+  async runningAgentIds(): Promise<string[]> {
+    const list = await this.docker.listContainers({ filters: { name: [CONTAINER_PREFIX] } });
+    const ids: string[] = [];
+    for (const c of list) {
+      const id = this.agentIdFromContainerName(c.Names?.[0] ?? "");
+      if (id) ids.push(id);
+    }
+    return ids;
+  }
+
+  /** After a server restart, treat already-running desktops as recently used. */
+  async hydrateLastUsed(): Promise<void> {
+    const now = Date.now();
+    for (const id of await this.runningAgentIds()) {
+      if (!this.lastUsed.has(id)) this.lastUsed.set(id, now);
+    }
+  }
+
+  /** Stop the least-recently-used desktop that is not protected. */
+  async evictIdle(protectedIds: Set<string>): Promise<string | undefined> {
+    const victim = pickEvictionVictim(await this.runningAgentIds(), this.lastUsed, protectedIds);
+    if (!victim) return undefined;
+    await this.stop(victim);
+    this.lastUsed.delete(victim);
+    return victim;
+  }
+
+  /** Remove leftover desktops whose agent was deleted. */
+  async reapOrphans(knownAgentIds: string[]): Promise<string[]> {
+    const known = new Set(knownAgentIds);
+    const list = await this.docker.listContainers({ all: true, filters: { name: [CONTAINER_PREFIX] } });
+    const removed: string[] = [];
+    for (const c of list) {
+      const name = (c.Names?.[0] ?? "").replace(/^\//, "");
+      if (!name.startsWith(CONTAINER_PREFIX) || name.endsWith(VOLUME_SUFFIX)) continue;
+      const agentId = name.slice(CONTAINER_PREFIX.length);
+      if (known.has(agentId)) continue;
+      await this.docker.getContainer(c.Id).remove({ force: true }).catch(() => undefined);
+      await this.docker.getVolume(this.volumeName(agentId)).remove().catch(() => undefined);
+      removed.push(agentId);
+    }
+    return removed;
+  }
+
   async runningCount(): Promise<number> {
     const list = await this.docker.listContainers({
       filters: { name: [CONTAINER_PREFIX] },
@@ -319,6 +369,20 @@ export class ComputerManager {
     }
     return stopped;
   }
+}
+
+export function pickEvictionVictim(
+  runningAgentIds: string[],
+  lastUsed: Map<string, number>,
+  protectedIds: Set<string>,
+): string | undefined {
+  let best: { id: string; used: number } | undefined;
+  for (const id of runningAgentIds) {
+    if (protectedIds.has(id)) continue;
+    const used = lastUsed.get(id) ?? 0;
+    if (!best || used < best.used) best = { id, used };
+  }
+  return best?.id;
 }
 
 export const computerManager = new ComputerManager();

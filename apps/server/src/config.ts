@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { PROVIDER_DEFAULT_MODELS, type Provider } from "@grokbot/shared";
 
 // Load .env robustly regardless of cwd: repo root (setup.sh writes it there) first,
 // then the current working directory. Works for `npm run dev`, and when the desktop
@@ -67,6 +68,23 @@ export const config = {
   /** Built web UI directory; when present it's served at "/" so the whole app runs on one port. */
   webDist: env("WEB_DIST", path.resolve(process.cwd(), "../web/dist")),
 };
+
+/** First configured developer key + a sensible default model. */
+export function liveModelConfig(): { provider: Provider; model: string } | undefined {
+  if (config.xaiApiKey) {
+    const model = /deepseek/i.test(config.xaiBaseUrl) ? "deepseek-v4-flash" : PROVIDER_DEFAULT_MODELS.generic;
+    return { provider: "generic", model };
+  }
+  if (config.anthropicApiKey) return { provider: "anthropic", model: PROVIDER_DEFAULT_MODELS.anthropic };
+  if (config.openaiApiKey) return { provider: "openai", model: PROVIDER_DEFAULT_MODELS.openai };
+  if (config.googleApiKey) return { provider: "google", model: PROVIDER_DEFAULT_MODELS.google };
+  return undefined;
+}
+
+export function defaultModelFor(provider: Provider): string {
+  if (provider === "generic" && /deepseek/i.test(config.xaiBaseUrl)) return "deepseek-v4-flash";
+  return PROVIDER_DEFAULT_MODELS[provider];
+}
 
 export function ensureDataDirs(): void {
   fs.mkdirSync(config.dataDir, { recursive: true });

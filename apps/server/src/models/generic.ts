@@ -39,8 +39,11 @@ const TEXT_ONLY = `
 This endpoint cannot receive screenshots (text-only). Do not wait for pixels and do not emit screenshot computer actions.
 Inspect the computer with bash and write notes to ~/workspace:
 - Files: ls, cat, python3
-- Web research: curl -sL -A "Mozilla/5.0" <url> (parse with python3). Also open the GUI browser so a human can watch: DISPLAY=:0 nohup /usr/local/bin/browser '<url>' >/dev/null 2>&1 &
-- Prefer bash over blind mouse clicks.`;
+- Web research: FIRST open the GUI browser so the user can watch:
+  DISPLAY=:0 nohup /usr/local/bin/browser 'https://www.google.com/search?q=…' >/dev/null 2>&1 &
+  Then fetch the same page with: curl -sL -A "Mozilla/5.0" <url> (parse with python3).
+- Prefer bash over blind mouse clicks. Do not spend turns on screenshot/click when bash can finish the job.
+- After you have the facts, {"done":true,"message":"…"} immediately. Do not loop on the same python parse.`;
 
 function looksLikeDeepSeek(init: AdapterInit): boolean {
   return `${init.baseUrl ?? ""} ${init.model}`.toLowerCase().includes("deepseek");

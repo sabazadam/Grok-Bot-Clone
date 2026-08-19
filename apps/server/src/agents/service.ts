@@ -50,9 +50,32 @@ export async function createAgent(input: store.NewAgent): Promise<Agent> {
   return agent;
 }
 
+/** Stop an idle desktop when the concurrent-computer cap would otherwise fail a start. */
+export async function makeRoomForComputer(agentId: string): Promise<void> {
+  const running = await computerManager.runningCount();
+  if (running < config.maxRunningComputers) return;
+  const protectedIds = new Set(
+    store
+      .listAgents()
+      .filter(
+        (a) =>
+          a.id !== agentId &&
+          (a.status === "working" || a.status === "starting" || a.status === "waiting_approval"),
+      )
+      .map((a) => a.id),
+  );
+  protectedIds.add(agentId);
+  const evicted = await computerManager.evictIdle(protectedIds);
+  if (!evicted) return;
+  store.setAgentStatus(evicted, "off");
+  const agent = store.getAgent(evicted);
+  if (agent) broadcast({ type: "agent_updated", agent: await agentWithComputer(agent) });
+}
+
 export async function provisionComputer(agentId: string): Promise<void> {
   setStatus(agentId, "starting");
   try {
+    await makeRoomForComputer(agentId);
     await computerManager.ensureRunning(agentId);
     await syncBrowserConfig(agentId);
     setStatus(agentId, "idle");
@@ -104,6 +127,7 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     roleTitle: src.roleTitle,
     instructions: src.instructions,
     avatarColor: src.avatarColor,
+    avatarShape: src.avatarShape,
     provider: src.provider,
     model: src.model,
     collaborationEnabled: src.collaborationEnabled,
