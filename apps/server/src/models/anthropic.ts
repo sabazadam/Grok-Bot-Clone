@@ -5,6 +5,7 @@
 import type { ComputerAction } from "@grokbot/shared";
 import type { AdapterInit, AgentDecision, ModelAdapter, ToolOutcome } from "./types.js";
 import { customTools, parseCustomToolCall } from "./toolset.js";
+import { requestSignal } from "./abort.js";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const BETA = "computer-use-2025-01-24";
@@ -80,10 +81,10 @@ export class AnthropicAdapter implements ModelAdapter {
     ];
   }
 
-  private async call(): Promise<AgentDecision> {
+  private async call(signal?: AbortSignal): Promise<AgentDecision> {
     const res = await this.fetchFn(API_URL, {
       method: "POST",
-      signal: AbortSignal.timeout(180_000),
+      signal: requestSignal(180_000, signal),
       headers: {
         "Content-Type": "application/json",
         "x-api-key": this.init.apiKey,
@@ -137,7 +138,7 @@ export class AnthropicAdapter implements ModelAdapter {
   /** ids whose computer action couldn't be mapped; replaced with error results */
   private unsupported = new Map<string, string>();
 
-  async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
+  async start(taskPrompt: string, screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision> {
     this.messages.push({
       role: "user",
       content: [
@@ -145,10 +146,10 @@ export class AnthropicAdapter implements ModelAdapter {
         { type: "image", source: { type: "base64", media_type: "image/png", data: screenshotB64 } },
       ],
     });
-    return this.call();
+    return this.call(signal);
   }
 
-  async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
+  async next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision> {
     const results: Block[] = outcomes.map((o) => {
       const override = this.unsupported.get(o.id);
       if (override) {
@@ -163,7 +164,7 @@ export class AnthropicAdapter implements ModelAdapter {
     });
     this.messages.push({ role: "user", content: results });
     this.trimHistory();
-    return this.call();
+    return this.call(signal);
   }
 
   /** Keep prompt size bounded: drop images from all but the 3 most recent user messages. */

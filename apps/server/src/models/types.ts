@@ -50,9 +50,9 @@ export interface AdapterInit {
 
 export interface ModelAdapter {
   /** First model call for a task: prompt + initial screenshot. */
-  start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision>;
+  start(taskPrompt: string, screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision>;
   /** Subsequent calls, feeding back results of the executed tool invocations. */
-  next(outcomes: ToolOutcome[]): Promise<AgentDecision>;
+  next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision>;
 }
 
 /** Human-readable caption for the activity feed. */

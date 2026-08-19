@@ -7,6 +7,7 @@ import type { ComputerAction } from "@grokbot/shared";
 import type { AdapterInit, AgentDecision, ModelAdapter, ToolOutcome } from "./types.js";
 import { customTools, parseCustomToolCall } from "./toolset.js";
 import type { ToolInvocation } from "./types.js";
+import { requestSignal } from "./abort.js";
 
 const API_URL = "https://generativelanguage.googleapis.com/v1beta/interactions";
 
@@ -163,7 +164,7 @@ export class GeminiAdapter implements ModelAdapter {
     return [...base, ...custom];
   }
 
-  private async call(input: Item[] | string, retried = false): Promise<AgentDecision> {
+  private async call(input: Item[] | string, retried = false, signal?: AbortSignal): Promise<AgentDecision> {
     const body: Record<string, unknown> = {
       model: this.init.model,
       input,
@@ -173,7 +174,7 @@ export class GeminiAdapter implements ModelAdapter {
 
     const res = await this.fetchFn(API_URL, {
       method: "POST",
-      signal: AbortSignal.timeout(180_000),
+      signal: requestSignal(180_000, signal),
       headers: {
         "Content-Type": "application/json",
         "x-goog-api-key": this.init.apiKey,
@@ -185,7 +186,7 @@ export class GeminiAdapter implements ModelAdapter {
       // some deployments may reject mixing custom functions with computer_use — retry without them
       if (res.status === 400 && this.customToolsSupported && !retried && /tool|function/i.test(text)) {
         this.customToolsSupported = false;
-        return this.call(input, true);
+        return this.call(input, true, signal);
       }
       throw new Error(`Gemini API ${res.status}: ${text.slice(0, 500)}`);
     }
@@ -240,16 +241,20 @@ export class GeminiAdapter implements ModelAdapter {
     return { kind: "act", invocations, assistantText: texts.join("\n").trim() || undefined };
   }
 
-  async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
+  async start(taskPrompt: string, screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision> {
     // The Interactions API takes no separate system field — prepend it.
     const text = `SYSTEM INSTRUCTIONS:\n${this.init.systemPrompt}\n\n---\nTASK:\n${taskPrompt}`;
-    return this.call([
-      { type: "text", text },
-      { type: "image", data: screenshotB64, mime_type: "image/png" },
-    ]);
+    return this.call(
+      [
+        { type: "text", text },
+        { type: "image", data: screenshotB64, mime_type: "image/png" },
+      ],
+      false,
+      signal,
+    );
   }
 
-  async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
+  async next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision> {
     const input: Item[] = outcomes.map((o) => {
       const name = this.callNames.get(o.id) ?? o.tool;
       this.callNames.delete(o.id);
@@ -261,6 +266,6 @@ export class GeminiAdapter implements ModelAdapter {
       }
       return { type: "function_result", name, call_id: o.id, result };
     });
-    return this.call(input);
+    return this.call(input, false, signal);
   }
 }

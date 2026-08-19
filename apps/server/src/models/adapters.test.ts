@@ -305,3 +305,43 @@ describe("GenericAdapter", () => {
     expect(typeof calls[1]!.body.messages.find((m: { role: string }) => m.role === "user").content).toBe("string");
   });
 });
+
+describe("adapter cancel signal", () => {
+  function hangingFetch(): typeof fetch {
+    return vi.fn(async (_url: any, init?: any) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      return await new Promise((_resolve, reject) => {
+        const fail = () => reject(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+        if (signal?.aborted) {
+          fail();
+          return;
+        }
+        signal?.addEventListener("abort", fail, { once: true });
+      });
+    }) as unknown as typeof fetch;
+  }
+
+  it("aborts an in-flight Anthropic call when the task is cancelled", async () => {
+    const controller = new AbortController();
+    const a = new AnthropicAdapter(init(hangingFetch()));
+    const pending = a.start("do a thing", SCREENSHOT, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("aborts an in-flight generic-model call when the task is cancelled", async () => {
+    const controller = new AbortController();
+    const a = new GenericAdapter(init(hangingFetch()));
+    const pending = a.start("task", SCREENSHOT, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("aborts an in-flight OpenAI call when the task is cancelled", async () => {
+    const controller = new AbortController();
+    const a = new OpenAIAdapter(init(hangingFetch()));
+    const pending = a.start("task", SCREENSHOT, controller.signal);
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});

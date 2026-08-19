@@ -95,6 +95,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     let decision: AgentDecision = await adapter.start(
       buildTaskPrompt(agent, conversation, opts, browseUrl ? { openedUrl: browseUrl } : undefined),
       firstShot.toString("base64"),
+      signal,
     );
 
     let stepIndex = 0;
@@ -233,19 +234,24 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         }
       }
 
-      decision = await adapter.next(outcomes);
+      decision = await adapter.next(outcomes, signal);
     }
   } catch (err) {
-    failed = true;
-    finalText = "";
-    const msg = store.addMessage({
-      conversationId: conversation.id,
-      sender: { kind: "system" },
-      kind: "error",
-      text: `${agent.name}'s task failed: ${(err as Error).message}`,
-    });
-    broadcast({ type: "message", message: msg });
-    store.updateTask(task.id, { status: "failed", finishedAt: Date.now(), resultSummary: (err as Error).message.slice(0, 500) });
+    if (signal.aborted) {
+      finalText = "Task cancelled.";
+      store.updateTask(task.id, { status: "cancelled", finishedAt: Date.now() });
+    } else {
+      failed = true;
+      finalText = "";
+      const msg = store.addMessage({
+        conversationId: conversation.id,
+        sender: { kind: "system" },
+        kind: "error",
+        text: `${agent.name}'s task failed: ${(err as Error).message}`,
+      });
+      broadcast({ type: "message", message: msg });
+      store.updateTask(task.id, { status: "failed", finishedAt: Date.now(), resultSummary: (err as Error).message.slice(0, 500) });
+    }
   } finally {
     unregisterTask(task.id);
   }

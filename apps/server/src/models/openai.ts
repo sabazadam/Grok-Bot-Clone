@@ -5,6 +5,7 @@
 import type { ComputerAction } from "@grokbot/shared";
 import type { AdapterInit, AgentDecision, ModelAdapter, ToolOutcome } from "./types.js";
 import { customTools, parseCustomToolCall } from "./toolset.js";
+import { requestSignal } from "./abort.js";
 
 type Item = Record<string, unknown>;
 
@@ -92,7 +93,7 @@ export class OpenAIAdapter implements ModelAdapter {
     ];
   }
 
-  private async call(input: Item[]): Promise<AgentDecision> {
+  private async call(input: Item[], signal?: AbortSignal): Promise<AgentDecision> {
     const body: Record<string, unknown> = {
       model: this.init.model,
       input,
@@ -104,7 +105,7 @@ export class OpenAIAdapter implements ModelAdapter {
 
     const res = await this.fetchFn(`${this.baseUrl}/responses`, {
       method: "POST",
-      signal: AbortSignal.timeout(180_000),
+      signal: requestSignal(180_000, signal),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.init.apiKey}`,
@@ -163,19 +164,22 @@ export class OpenAIAdapter implements ModelAdapter {
     return { kind: "act", invocations, assistantText: texts.join("\n").trim() || undefined };
   }
 
-  async start(taskPrompt: string, screenshotB64: string): Promise<AgentDecision> {
-    return this.call([
-      {
-        role: "user",
-        content: [
-          { type: "input_text", text: taskPrompt },
-          { type: "input_image", image_url: `data:image/png;base64,${screenshotB64}` },
-        ],
-      },
-    ]);
+  async start(taskPrompt: string, screenshotB64: string, signal?: AbortSignal): Promise<AgentDecision> {
+    return this.call(
+      [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: taskPrompt },
+            { type: "input_image", image_url: `data:image/png;base64,${screenshotB64}` },
+          ],
+        },
+      ],
+      signal,
+    );
   }
 
-  async next(outcomes: ToolOutcome[]): Promise<AgentDecision> {
+  async next(outcomes: ToolOutcome[], signal?: AbortSignal): Promise<AgentDecision> {
     const input: Item[] = outcomes.map((o) => {
       if (this.computerCallIds.has(o.id)) {
         this.computerCallIds.delete(o.id);
@@ -198,6 +202,6 @@ export class OpenAIAdapter implements ModelAdapter {
       }
       return { type: "function_call_output", call_id: o.id, output: o.output || "ok" };
     });
-    return this.call(input);
+    return this.call(input, signal);
   }
 }
