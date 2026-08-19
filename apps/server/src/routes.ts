@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { z } from "zod";
 import fastifyStatic from "@fastify/static";
 import { FACE_SHAPES, PROVIDER_LABELS, type Provider } from "@grokbot/shared";
+const TOOL_POLICIES = ["full", "research", "coding", "browser_only", "review_only", "custom"] as const;
 import { config, defaultModelFor } from "./config.js";
 import * as store from "./store.js";
 import * as service from "./agents/service.js";
@@ -33,7 +34,19 @@ const agentBody = z.object({
   stealthBrowsing: z.boolean().default(true),
   isTeamLead: z.boolean().default(false),
   team: z.string().max(40).default(""),
+  agentKind: z.enum(["standard", "specialist"]).optional(),
+  parentAgentId: z.string().optional(),
+  toolPolicy: z.enum(TOOL_POLICIES).default("full"),
+  toolAllow: z.array(z.string().max(40)).max(20).optional(),
 });
+
+/** A custom tool policy must name at least one tool. Applied to create + update payloads. */
+function customPolicyError(data: { toolPolicy?: string; toolAllow?: string[] }): string | undefined {
+  if (data.toolPolicy === "custom" && !(data.toolAllow && data.toolAllow.length > 0)) {
+    return "custom tool policy requires a non-empty toolAllow list";
+  }
+  return undefined;
+}
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   fs.mkdirSync(path.join(config.dataDir, "screenshots"), { recursive: true });
@@ -102,6 +115,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/agents", async (req, reply) => {
     const parsed = agentBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const policyErr = customPolicyError(parsed.data);
+    if (policyErr) return reply.code(400).send({ error: policyErr });
     if (store.rosterCount() >= store.ROSTER_LIMIT) {
       return reply.code(400).send({ error: "roster limit reached (50 bots + groups)" });
     }
@@ -123,6 +138,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const parsed = agentBody.partial().safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const policyErr = customPolicyError(parsed.data);
+    if (policyErr) return reply.code(400).send({ error: policyErr });
     const agent = store.updateAgent(id, parsed.data);
     if (!agent) return reply.code(404).send({ error: "not found" });
     // keep direct conversation title in sync with the agent name

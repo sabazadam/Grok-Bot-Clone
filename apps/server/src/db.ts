@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS agents (
   hidden INTEGER NOT NULL DEFAULT 0,
   is_team_lead INTEGER NOT NULL DEFAULT 0,
   team TEXT NOT NULL DEFAULT '',
+  agent_kind TEXT NOT NULL DEFAULT 'standard',
+  parent_agent_id TEXT,
+  tool_policy TEXT NOT NULL DEFAULT 'full',
+  tool_allow TEXT,
   status TEXT NOT NULL DEFAULT 'off',
   created_at INTEGER NOT NULL
 );
@@ -159,6 +163,18 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("avatar_shape")) {
     d.exec(`ALTER TABLE agents ADD COLUMN avatar_shape TEXT`);
+  }
+  if (!cols.has("agent_kind")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN agent_kind TEXT NOT NULL DEFAULT 'standard'`);
+  }
+  if (!cols.has("parent_agent_id")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN parent_agent_id TEXT`);
+  }
+  if (!cols.has("tool_policy")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN tool_policy TEXT NOT NULL DEFAULT 'full'`);
+  }
+  if (!cols.has("tool_allow")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN tool_allow TEXT`);
   }
   const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
   if (routineCols.size > 0 && !routineCols.has("schedule_json")) {

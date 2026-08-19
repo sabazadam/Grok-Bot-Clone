@@ -55,6 +55,36 @@ describe("agent store", () => {
     expect(got.isTeamLead).toBe(false);
   });
 
+  it("defaults role/tool-policy fields and round-trips specialists", () => {
+    const std = makeAgent({ name: "Standard" });
+    expect(std.agentKind).toBe("standard");
+    expect(std.toolPolicy).toBe("full");
+    expect(std.parentAgentId).toBeUndefined();
+    expect(std.toolAllow).toBeUndefined();
+
+    const lead = makeAgent({ name: "Lead", isTeamLead: true });
+    const spec = makeAgent({
+      name: "Researcher",
+      agentKind: "specialist",
+      parentAgentId: lead.id,
+      toolPolicy: "custom",
+      toolAllow: ["bash", "call_plugin"],
+    });
+    const got = store.getAgent(spec.id)!;
+    expect(got.agentKind).toBe("specialist");
+    expect(got.parentAgentId).toBe(lead.id);
+    expect(got.toolPolicy).toBe("custom");
+    expect(got.toolAllow).toEqual(["bash", "call_plugin"]);
+
+    // specialists persist and are listed like any teammate
+    expect(store.listAgents().map((x) => x.id)).toContain(spec.id);
+
+    // update path round-trips too
+    const updated = store.updateAgent(spec.id, { toolPolicy: "review_only", toolAllow: undefined })!;
+    expect(updated.toolPolicy).toBe("review_only");
+    expect(updated.toolAllow).toBeUndefined();
+  });
+
   it("persists team lead and skills", () => {
     const a = makeAgent({ isTeamLead: true });
     expect(a.isTeamLead).toBe(true);

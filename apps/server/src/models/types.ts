@@ -44,6 +44,8 @@ export interface AdapterInit {
   /** for OpenAI-compatible endpoints (xAI etc.) */
   baseUrl?: string;
   collaborationEnabled: boolean;
+  /** Resolved set of tool names this agent may use (policy/role enforcement at the schema layer). */
+  allowedTools: string[];
   /** injectable for unit tests */
   fetchFn?: typeof fetch;
 }

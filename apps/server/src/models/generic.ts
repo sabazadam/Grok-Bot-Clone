@@ -9,30 +9,52 @@ import type { ToolInvocation } from "./types.js";
 
 type Msg = { role: "system" | "user" | "assistant"; content: unknown };
 
-const PROTOCOL = `
+/** Per-tool JSON schema lines for the action protocol, keyed by tool name. */
+const COMPUTER_PROTOCOL_LINES = [
+  `{"thought":"...","computer":{"type":"screenshot"}}`,
+  `{"thought":"...","computer":{"type":"left_click","x":100,"y":200}}          // also: double_click, triple_click, right_click, middle_click, mouse_move`,
+  `{"thought":"...","computer":{"type":"left_click_drag","startX":1,"startY":1,"x":2,"y":2}}`,
+  `{"thought":"...","computer":{"type":"scroll","x":640,"y":400,"direction":"down","amount":3}}`,
+  `{"thought":"...","computer":{"type":"type","text":"hello"}}`,
+  `{"thought":"...","computer":{"type":"key","key":"ctrl+l"}}                  // xdotool key names, e.g. Return, Escape, alt+Tab`,
+  `{"thought":"...","computer":{"type":"wait","durationMs":2000}}`,
+].join("\n");
+
+const TOOL_PROTOCOL_LINES: Record<string, string> = {
+  bash: `{"thought":"...","bash":{"command":"ls ~/workspace","timeoutSec":60}}`,
+  update_memory: `{"thought":"...","update_memory":{"kind":"fact","content":"..."}}           // kind: preference|fact|summary`,
+  request_approval: `{"thought":"...","request_approval":{"description":"...","reason":"..."}}`,
+  save_skill: `{"thought":"...","save_skill":{"name":"...","description":"...","instructions":"..."}}`,
+  create_agent: `{"thought":"...","create_agent":{"name":"...","roleTitle":"...","instructions":"...","isTeamLead":false}}`,
+  create_routine: `{"thought":"...","create_routine":{"name":"...","prompt":"...","schedule":"every morning","skillName":"optional"}}`,
+  send_message: `{"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now`,
+  send_message_to_agent: `{"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}`,
+  delegate_task: `{"thought":"...","delegate_task":{"tasks":[{"agentName":"Name","goal":"...","context":"..."}],"concurrency":2}}   // or {"spawn":{"name":"Name","roleTitle":"Role","toolPolicy":"research"},"goal":"..."}`,
+};
+
+/** Build the action protocol advertising only the tools this agent's policy allows. */
+function buildProtocol(allowed: Set<string>): string {
+  const lines: string[] = [];
+  const canComputer = allowed.has("computer");
+  if (canComputer) lines.push(COMPUTER_PROTOCOL_LINES);
+  for (const name of ["bash", "update_memory", "request_approval", "save_skill", "create_agent", "create_routine", "send_message", "send_message_to_agent", "delegate_task"]) {
+    if (allowed.has(name) && TOOL_PROTOCOL_LINES[name]) lines.push(TOOL_PROTOCOL_LINES[name]!);
+  }
+  lines.push(`{"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed`);
+
+  const coordNote = canComputer
+    ? `\nCoordinates are pixels on the screenshot you see. After every action you receive the result and a fresh screenshot.`
+    : `\nYou do NOT have the computer (GUI) tool under your current tool policy — do not emit "computer" actions; use the tools listed above.`;
+
+  return `
 ## How to act
 You control the computer by replying with EXACTLY ONE JSON object per turn — no markdown fences, no extra prose outside the JSON. Schemas (pick one):
 
-{"thought":"...","computer":{"type":"screenshot"}}
-{"thought":"...","computer":{"type":"left_click","x":100,"y":200}}          // also: double_click, triple_click, right_click, middle_click, mouse_move
-{"thought":"...","computer":{"type":"left_click_drag","startX":1,"startY":1,"x":2,"y":2}}
-{"thought":"...","computer":{"type":"scroll","x":640,"y":400,"direction":"down","amount":3}}
-{"thought":"...","computer":{"type":"type","text":"hello"}}
-{"thought":"...","computer":{"type":"key","key":"ctrl+l"}}                  // xdotool key names, e.g. Return, Escape, alt+Tab
-{"thought":"...","computer":{"type":"wait","durationMs":2000}}
-{"thought":"...","bash":{"command":"ls ~/workspace","timeoutSec":60}}
-{"thought":"...","update_memory":{"kind":"fact","content":"..."}}           // kind: preference|fact|summary
-{"thought":"...","request_approval":{"description":"...","reason":"..."}}
-{"thought":"...","save_skill":{"name":"...","description":"...","instructions":"..."}}
-{"thought":"...","create_agent":{"name":"...","roleTitle":"...","instructions":"...","isTeamLead":false}}
-{"thought":"...","create_routine":{"name":"...","prompt":"...","schedule":"every morning","skillName":"optional"}}
-{"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now
-{"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}
-{"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed
+${lines.join("\n")}
 
 Thoughts stay internal — they are not posted to chat. Stay silent while you work on the computer. Message only when necessary and related to the task.
-
-Coordinates are pixels on the screenshot you see. After every action you receive the result and a fresh screenshot. Think step by step in "thought". When the task is complete (or impossible), reply with the {"done":true,...} form.`;
+${coordNote} Think step by step in "thought". When the task is complete (or impossible), reply with the {"done":true,...} form.`;
+}
 
 const TEXT_ONLY = `
 ## Vision
@@ -123,7 +145,7 @@ export class GenericAdapter implements ModelAdapter {
     this.disableThinking = deepseek;
     this.messages.push({
       role: "system",
-      content: init.systemPrompt + "\n" + PROTOCOL + (this.textOnly ? "\n" + TEXT_ONLY : ""),
+      content: init.systemPrompt + "\n" + buildProtocol(new Set(init.allowedTools)) + (this.textOnly ? "\n" + TEXT_ONLY : ""),
     });
   }
 

@@ -10,6 +10,8 @@ import { broadcast } from "../bus.js";
 import * as service from "../agents/service.js";
 import { deliverAgentMessage } from "./orchestrator.js";
 import { callPlugin } from "../plugins/runtime.js";
+import { isToolAllowed } from "./toolPolicy.js";
+import { TOOL_POLICY_LABELS } from "@grokbot/shared";
 
 export interface ExecContext {
   agent: Agent;
@@ -57,6 +59,18 @@ export async function executeInvocation(
   stepIndex: number,
 ): Promise<{ outcome: ToolOutcome; screenshotUrl?: string }> {
   const { agent } = ctx;
+
+  // ── tool-policy enforcement (authoritative guard, independent of the model) ──
+  if (!isToolAllowed(agent, inv.tool)) {
+    return {
+      outcome: {
+        id: inv.id,
+        tool: inv.tool,
+        output: `"${inv.tool}" is not permitted by your tool policy (${TOOL_POLICY_LABELS[agent.toolPolicy]}). Use only your allowed tools, or ask the user to change your policy.`,
+        isError: true,
+      },
+    };
+  }
 
   switch (inv.tool) {
     case "computer": {

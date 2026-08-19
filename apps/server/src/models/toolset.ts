@@ -10,7 +10,13 @@ export interface NeutralTool {
   required: string[];
 }
 
-export function customTools(collaborationEnabled: boolean): NeutralTool[] {
+/**
+ * Neutral custom-tool schemas, filtered to the tools this agent's policy allows.
+ * `allowed` is the resolved set of tool names (see runtime/toolPolicy.resolveAllowedTools); it always
+ * contains the always-allowed reporting/safety/completion tools. Tools not present are omitted from
+ * the schema advertised to the model (schema-layer enforcement).
+ */
+export function customTools(allowed: Set<string>): NeutralTool[] {
   const tools: NeutralTool[] = [
     {
       name: "bash",
@@ -111,19 +117,18 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
       required: ["summary"],
     },
   ];
-  if (collaborationEnabled) {
-    tools.push({
-      name: "send_message_to_agent",
-      description:
-        "Send a direct message to another agent teammate. They work independently on their own computer and reply only if a result is needed. Use only when collaboration genuinely helps the current task or the user asked for it — not to broadcast sandbox status.",
-      parameters: {
-        toAgentName: { type: "string", description: "The teammate's exact name" },
-        text: { type: "string", description: "Your message — include all context they need" },
-      },
-      required: ["toAgentName", "text"],
-    });
-  }
-  return tools;
+  tools.push({
+    name: "send_message_to_agent",
+    description:
+      "Send a direct message to another agent teammate. They work independently on their own computer and reply only if a result is needed. Use only when collaboration genuinely helps the current task or the user asked for it — not to broadcast sandbox status.",
+    parameters: {
+      toAgentName: { type: "string", description: "The teammate's exact name" },
+      text: { type: "string", description: "Your message — include all context they need" },
+    },
+    required: ["toAgentName", "text"],
+  });
+  // Only advertise the tools this agent's policy allows (always-allowed tools are always present).
+  return tools.filter((t) => allowed.has(t.name));
 }
 
 /** Parse a custom-tool call (by name) into a neutral ToolInvocation, or undefined. */

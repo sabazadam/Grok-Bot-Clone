@@ -134,6 +134,10 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     stealthBrowsing: src.stealthBrowsing,
     isTeamLead: src.isTeamLead,
     team: src.team,
+    // A manual duplicate is a normal top-level teammate, not a spawned specialist.
+    agentKind: "standard",
+    toolPolicy: src.toolPolicy,
+    toolAllow: src.toolAllow,
   });
   store.copyAgentSkills(src.id, copy.id);
   store.copyAgentRoutines(src.id, copy.id);

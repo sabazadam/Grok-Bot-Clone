@@ -4,6 +4,7 @@ import { OpenAIAdapter } from "./openai.js";
 import { GeminiAdapter } from "./gemini.js";
 import { GenericAdapter } from "./generic.js";
 import type { AdapterInit } from "./types.js";
+import { ALWAYS_ALLOWED_TOOLS, GATEABLE_TOOLS } from "@grokbot/shared";
 
 function mockFetch(responses: unknown[]): { fn: typeof fetch; calls: { url: string; body: any }[] } {
   const calls: { url: string; body: any }[] = [];
@@ -24,6 +25,7 @@ function init(fetchFn: typeof fetch, extra: Partial<AdapterInit> = {}): AdapterI
     resolution: { width: 1280, height: 800 },
     apiKey: "k",
     collaborationEnabled: true,
+    allowedTools: [...GATEABLE_TOOLS, ...ALWAYS_ALLOWED_TOOLS],
     fetchFn,
     ...extra,
   };

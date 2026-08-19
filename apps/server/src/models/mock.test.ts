@@ -8,6 +8,7 @@ const init: AdapterInit = {
   resolution: { width: 1280, height: 800 },
   apiKey: "",
   collaborationEnabled: true,
+  allowedTools: [],
 };
 
 describe("MockAdapter reporting", () => {

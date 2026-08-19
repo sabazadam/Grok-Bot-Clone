@@ -1,8 +1,9 @@
 /** Assembles an agent's system prompt: identity, role, environment, memory, teammates, policies. */
 import type { Agent, Conversation } from "@grokbot/shared";
-import { parseResolution } from "@grokbot/shared";
+import { parseResolution, TOOL_POLICY_LABELS } from "@grokbot/shared";
 import { config } from "../config.js";
 import * as store from "../store.js";
+import { describeAllowedTools, resolveAllowedTools } from "./toolPolicy.js";
 
 export interface TaskPromptOptions {
   agentId: string;
@@ -54,6 +55,19 @@ Never use send_message (or a teammate DM) to say that you clicked, typed, ran a 
     sections.push(
       `## Team lead
 You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.`,
+    );
+  }
+
+  // Role & tool policy (belt-and-suspenders: schema filtering + host-side enforcement also apply).
+  if (agent.toolPolicy && agent.toolPolicy !== "full") {
+    const allowed = resolveAllowedTools(agent);
+    const notes: string[] = [];
+    if (!allowed.has("computer")) notes.push("You do NOT have the computer (GUI) tool — work via the other tools you have.");
+    if (!allowed.has("bash")) notes.push("You do NOT have the bash/shell tool.");
+    sections.push(
+      `## Your role & tools
+Tool policy: ${TOOL_POLICY_LABELS[agent.toolPolicy]}. You may use: ${describeAllowedTools(agent)} (plus reporting tools: send_message, request_approval, task_complete, update_memory).
+Attempts to use a tool outside this policy will be refused.${notes.length ? "\n" + notes.join("\n") : ""}`,
     );
   }
 

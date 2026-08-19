@@ -154,7 +154,7 @@ export class GeminiAdapter implements ModelAdapter {
   private tools(): Item[] {
     const base: Item[] = [{ type: "computer_use", environment: "desktop" }];
     if (!this.customToolsSupported) return base;
-    const custom = customTools(this.init.collaborationEnabled).map((t) => ({
+    const custom = customTools(new Set(this.init.allowedTools)).map((t) => ({
       type: "function",
       name: t.name,
       description: t.description,

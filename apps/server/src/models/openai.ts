@@ -70,7 +70,7 @@ export class OpenAIAdapter implements ModelAdapter {
   }
 
   private tools(): Item[] {
-    const custom = customTools(this.init.collaborationEnabled).map((t) => ({
+    const custom = customTools(new Set(this.init.allowedTools)).map((t) => ({
       type: "function",
       name: t.name,
       description: t.description,

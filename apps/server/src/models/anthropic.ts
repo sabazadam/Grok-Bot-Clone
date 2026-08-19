@@ -64,7 +64,7 @@ export class AnthropicAdapter implements ModelAdapter {
   }
 
   private tools(): Block[] {
-    const custom = customTools(this.init.collaborationEnabled).map((t) => ({
+    const custom = customTools(new Set(this.init.allowedTools)).map((t) => ({
       name: t.name,
       description: t.description,
       input_schema: { type: "object", properties: t.parameters, required: t.required },
