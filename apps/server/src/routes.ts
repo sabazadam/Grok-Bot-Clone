@@ -18,6 +18,7 @@ import { setTakeover } from "./runtime/takeover.js";
 import { MAX_ATTACH_FILES, saveAttachments, uploadsDir } from "./uploads.js";
 import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
 import { forgetPlugin } from "./plugins/runtime.js";
+import { isAllowedBrowserOrigin } from "./origin.js";
 
 const providerEnum = z.enum(["anthropic", "openai", "google", "generic"]);
 
@@ -68,7 +69,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     });
   }
 
-  app.get("/ws", { websocket: true }, (socket) => {
+  app.get("/ws", { websocket: true }, (socket, req) => {
+    // WebSocket does not use CORS. A public page can otherwise subscribe to
+    // every chat, approval, and screenshot URL while GrokBot is running.
+    const origin = typeof req.headers.origin === "string" ? req.headers.origin : undefined;
+    if (!isAllowedBrowserOrigin(origin)) {
+      socket.close(1008, "origin not allowed");
+      return;
+    }
     addClient(socket);
   });
 
