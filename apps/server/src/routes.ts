@@ -10,7 +10,8 @@ import * as store from "./store.js";
 import * as service from "./agents/service.js";
 import { computerManager } from "./computer/manager.js";
 import { addClient, broadcast } from "./bus.js";
-import { dispatchUserMessage } from "./runtime/orchestrator.js";
+import { dispatchUserMessage, stopConversation } from "./runtime/orchestrator.js";
+import { runRoutineNow } from "./runtime/scheduler.js";
 import { resolvePendingApproval } from "./runtime/approvals.js";
 import { cancelTask } from "./runtime/cancel.js";
 import { setTakeover } from "./runtime/takeover.js";
@@ -26,6 +27,7 @@ const agentBody = z.object({
   model: z.string().min(1).max(120),
   collaborationEnabled: z.boolean().default(true),
   stealthBrowsing: z.boolean().default(true),
+  isTeamLead: z.boolean().default(false),
 });
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -251,6 +253,166 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     broadcast({ type: "message", message });
     dispatchUserMessage(conv, message);
     return message;
+  });
+
+  app.post("/api/conversations/:id/stop", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getConversation(id)) return reply.code(404).send({ error: "not found" });
+    stopConversation(id);
+    return { ok: true };
+  });
+
+  app.patch("/api/conversations/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const conv = store.getConversation(id);
+    if (!conv) return reply.code(404).send({ error: "not found" });
+    const body = z
+      .object({ title: z.string().min(1).max(80).optional(), agentIds: z.array(z.string()).min(1).optional() })
+      .safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    if (body.data.title) store.renameConversation(id, body.data.title);
+    if (body.data.agentIds) {
+      if (conv.kind !== "group") return reply.code(400).send({ error: "only group membership can be edited" });
+      for (const agentId of body.data.agentIds) {
+        if (!store.getAgent(agentId)) return reply.code(400).send({ error: `unknown agent ${agentId}` });
+      }
+      store.setConversationAgents(id, body.data.agentIds);
+    }
+    const updated = store.getConversation(id);
+    if (updated) broadcast({ type: "conversation_updated", conversation: updated });
+    return updated;
+  });
+
+  // ── skills ────────────────────────────────────────────────────────────
+  app.get("/api/skills", async () => store.listSkills());
+
+  app.post("/api/skills", async (req, reply) => {
+    const body = z
+      .object({
+        name: z.string().min(1).max(80),
+        description: z.string().max(400).default(""),
+        instructions: z.string().min(1).max(20000),
+        enableForAgentId: z.string().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    if (store.getSkillByName(body.data.name)) {
+      return reply.code(409).send({ error: `A skill named "${body.data.name}" already exists` });
+    }
+    const skill = store.createSkill({
+      name: body.data.name,
+      description: body.data.description,
+      instructions: body.data.instructions,
+      createdByAgentId: body.data.enableForAgentId,
+    });
+    if (body.data.enableForAgentId) store.setAgentSkill(body.data.enableForAgentId, skill.id, true);
+    broadcast({ type: "skill_updated", skill });
+    return skill;
+  });
+
+  app.patch("/api/skills/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        description: z.string().max(400).optional(),
+        instructions: z.string().min(1).max(20000).optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const skill = store.updateSkill(id, body.data);
+    if (!skill) return reply.code(404).send({ error: "not found" });
+    broadcast({ type: "skill_updated", skill });
+    return skill;
+  });
+
+  app.delete("/api/skills/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getSkill(id)) return reply.code(404).send({ error: "not found" });
+    store.deleteSkill(id);
+    broadcast({ type: "skill_deleted", skillId: id });
+    return { ok: true };
+  });
+
+  app.get("/api/agents/:id/skills", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const all = store.listSkills();
+    const enabled = new Set(store.listEnabledSkillsForAgent(id).map((s) => s.id));
+    return all.map((s) => ({ ...s, enabled: enabled.has(s.id) }));
+  });
+
+  app.post("/api/agents/:id/skills", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    const body = z.object({ skillId: z.string(), enabled: z.boolean() }).safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    if (!store.getSkill(body.data.skillId)) return reply.code(404).send({ error: "skill not found" });
+    store.setAgentSkill(id, body.data.skillId, body.data.enabled);
+    return { ok: true, skills: store.listEnabledSkillsForAgent(id) };
+  });
+
+  // ── routines ──────────────────────────────────────────────────────────
+  app.get("/api/routines", async (req) => {
+    const { agentId } = req.query as { agentId?: string };
+    return store.listRoutines(agentId);
+  });
+
+  app.post("/api/routines", async (req, reply) => {
+    const body = z
+      .object({
+        agentId: z.string(),
+        name: z.string().min(1).max(80),
+        prompt: z.string().min(1).max(20000),
+        intervalMinutes: z.number().min(1).max(60 * 24 * 30),
+        skillId: z.string().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    if (!store.getAgent(body.data.agentId)) return reply.code(400).send({ error: "unknown agent" });
+    if (store.listRoutines(body.data.agentId).length >= 50) {
+      return reply.code(400).send({ error: "this agent already has 50 routines" });
+    }
+    const routine = store.createRoutine(body.data);
+    broadcast({ type: "routine_updated", routine });
+    return routine;
+  });
+
+  app.patch("/api/routines/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = z
+      .object({
+        name: z.string().min(1).max(80).optional(),
+        prompt: z.string().min(1).max(20000).optional(),
+        intervalMinutes: z.number().min(1).max(60 * 24 * 30).optional(),
+        enabled: z.boolean().optional(),
+        skillId: z.string().nullable().optional(),
+      })
+      .safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: body.error.message });
+    const patch = {
+      ...body.data,
+      skillId: body.data.skillId === null ? undefined : body.data.skillId,
+    };
+    const routine = store.updateRoutine(id, patch);
+    if (!routine) return reply.code(404).send({ error: "not found" });
+    broadcast({ type: "routine_updated", routine });
+    return routine;
+  });
+
+  app.delete("/api/routines/:id", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getRoutine(id)) return reply.code(404).send({ error: "not found" });
+    store.deleteRoutine(id);
+    broadcast({ type: "routine_deleted", routineId: id });
+    return { ok: true };
+  });
+
+  app.post("/api/routines/:id/run", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    if (!store.getRoutine(id)) return reply.code(404).send({ error: "not found" });
+    const ok = runRoutineNow(id);
+    return { ok };
   });
 
   // ── approvals & task control ──────────────────────────────────────────

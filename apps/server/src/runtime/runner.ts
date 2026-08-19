@@ -19,7 +19,7 @@ import { registerTask, unregisterTask } from "./cancel.js";
 import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
-import { handoffCaption, isSilentReply, shouldPostToolToChat } from "./report.js";
+import { communicationCaption, isSilentReply, shouldPostToolToChat } from "./report.js";
 
 export interface RunTaskOptions {
   agentId: string;
@@ -173,8 +173,9 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         broadcast({ type: "task_step", taskId: task.id, agentId: agent.id, stepIndex, caption, screenshotUrl });
         // Sandbox clicks/commands stay on the computer feed. Chat only gets
         // real communication (a teammate handoff the user should see).
-        if (shouldPostToolToChat(inv) && inv.tool === "send_message_to_agent") {
-          postAgentText(agent, conversation.id, handoffCaption(inv.toAgentName, inv.text));
+        if (shouldPostToolToChat(inv) && !outcome.isError) {
+          const note = communicationCaption(inv);
+          if (note) postAgentText(agent, conversation.id, note);
         }
       }
 

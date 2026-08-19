@@ -13,6 +13,8 @@ import type {
   MessageKind,
   MessageSender,
   Provider,
+  Routine,
+  Skill,
   Task,
   TaskStatus,
 } from "@grokbot/shared";
@@ -32,6 +34,7 @@ function rowToAgent(r: any): Agent {
     collaborationEnabled: !!r.collaboration_enabled,
     stealthBrowsing: !!r.stealth_browsing,
     hidden: !!r.hidden,
+    isTeamLead: !!r.is_team_lead,
     status: r.status as AgentStatus,
     createdAt: r.created_at,
   };
@@ -110,14 +113,15 @@ export interface NewAgent {
   model: string;
   collaborationEnabled: boolean;
   stealthBrowsing: boolean;
+  isTeamLead?: boolean;
 }
 
 export function createAgent(a: NewAgent): Agent {
   const id = nanoid(10);
   getDb()
     .prepare(
-      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'off', ?)`,
+      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'off', ?)`,
     )
     .run(
       id,
@@ -129,6 +133,7 @@ export function createAgent(a: NewAgent): Agent {
       a.model,
       a.collaborationEnabled ? 1 : 0,
       a.stealthBrowsing ? 1 : 0,
+      a.isTeamLead ? 1 : 0,
       Date.now(),
     );
   return getAgent(id)!;
@@ -154,7 +159,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
   const merged = { ...cur, ...patch };
   getDb()
     .prepare(
-      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=? WHERE id=?`,
+      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=? WHERE id=?`,
     )
     .run(
       merged.name,
@@ -165,6 +170,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
       merged.model,
       merged.collaborationEnabled ? 1 : 0,
       merged.stealthBrowsing ? 1 : 0,
+      merged.isTeamLead ? 1 : 0,
       id,
     );
   return getAgent(id);
@@ -197,6 +203,8 @@ export function deleteAgent(id: string): void {
   }
   db.prepare(`DELETE FROM memories WHERE agent_id=?`).run(id);
   db.prepare(`DELETE FROM tasks WHERE agent_id=?`).run(id);
+  db.prepare(`DELETE FROM agent_skills WHERE agent_id=?`).run(id);
+  db.prepare(`DELETE FROM routines WHERE agent_id=?`).run(id);
 }
 
 // ── conversations ───────────────────────────────────────────────────────
@@ -239,6 +247,12 @@ export function renameConversation(id: string, title: string): void {
 export function deleteConversation(id: string): void {
   getDb().prepare(`DELETE FROM messages WHERE conversation_id=?`).run(id);
   getDb().prepare(`DELETE FROM conversations WHERE id=?`).run(id);
+}
+
+export function setConversationAgents(id: string, agentIds: string[]): Conversation | undefined {
+  if (!getConversation(id)) return undefined;
+  getDb().prepare(`UPDATE conversations SET agent_ids=? WHERE id=?`).run(JSON.stringify(agentIds), id);
+  return getConversation(id);
 }
 
 // ── messages ────────────────────────────────────────────────────────────
@@ -357,6 +371,13 @@ export function listApprovalsByConversation(conversationId: string): Approval[] 
     .map(rowToApproval);
 }
 
+export function listPendingApprovalsForAgent(agentId: string): Approval[] {
+  return getDb()
+    .prepare(`SELECT * FROM approvals WHERE agent_id=? AND status='pending'`)
+    .all(agentId)
+    .map(rowToApproval);
+}
+
 // ── memories ────────────────────────────────────────────────────────────
 
 export function addMemory(agentId: string, kind: MemoryKind, content: string): MemoryEntry {
@@ -375,4 +396,204 @@ export function listMemories(agentId: string, limit = 40): MemoryEntry[] {
 
 export function deleteMemory(id: string): void {
   getDb().prepare(`DELETE FROM memories WHERE id=?`).run(id);
+}
+
+export function listActiveTasksForAgent(agentId: string): Task[] {
+  return getDb()
+    .prepare(`SELECT * FROM tasks WHERE agent_id=? AND status IN ('queued','running','waiting_approval')`)
+    .all(agentId)
+    .map(rowToTask);
+}
+
+// ── skills ──────────────────────────────────────────────────────────────
+
+function rowToSkill(r: any): Skill {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    instructions: r.instructions,
+    createdByAgentId: r.created_by_agent_id ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+export function createSkill(input: {
+  name: string;
+  description: string;
+  instructions: string;
+  createdByAgentId?: string;
+}): Skill {
+  const id = nanoid(10);
+  getDb()
+    .prepare(
+      `INSERT INTO skills (id, name, description, instructions, created_by_agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, input.name.trim(), input.description.trim(), input.instructions.trim(), input.createdByAgentId ?? null, Date.now());
+  if (input.createdByAgentId) setAgentSkill(input.createdByAgentId, id, true);
+  return getSkill(id)!;
+}
+
+export function getSkill(id: string): Skill | undefined {
+  const r = getDb().prepare(`SELECT * FROM skills WHERE id=?`).get(id);
+  return r ? rowToSkill(r) : undefined;
+}
+
+export function getSkillByName(name: string): Skill | undefined {
+  const r = getDb().prepare(`SELECT * FROM skills WHERE lower(name)=lower(?)`).get(name.trim());
+  return r ? rowToSkill(r) : undefined;
+}
+
+export function listSkills(): Skill[] {
+  return getDb().prepare(`SELECT * FROM skills ORDER BY name COLLATE NOCASE`).all().map(rowToSkill);
+}
+
+export function updateSkill(
+  id: string,
+  patch: Partial<Pick<Skill, "name" | "description" | "instructions">>,
+): Skill | undefined {
+  const cur = getSkill(id);
+  if (!cur) return undefined;
+  getDb()
+    .prepare(`UPDATE skills SET name=?, description=?, instructions=? WHERE id=?`)
+    .run(patch.name ?? cur.name, patch.description ?? cur.description, patch.instructions ?? cur.instructions, id);
+  return getSkill(id);
+}
+
+export function deleteSkill(id: string): void {
+  const db = getDb();
+  db.prepare(`DELETE FROM agent_skills WHERE skill_id=?`).run(id);
+  db.prepare(`UPDATE routines SET skill_id=NULL WHERE skill_id=?`).run(id);
+  db.prepare(`DELETE FROM skills WHERE id=?`).run(id);
+}
+
+export function setAgentSkill(agentId: string, skillId: string, enabled: boolean): void {
+  getDb()
+    .prepare(
+      `INSERT INTO agent_skills (agent_id, skill_id, enabled) VALUES (?, ?, ?)
+       ON CONFLICT(agent_id, skill_id) DO UPDATE SET enabled=excluded.enabled`,
+    )
+    .run(agentId, skillId, enabled ? 1 : 0);
+}
+
+export function listEnabledSkillsForAgent(agentId: string): Skill[] {
+  return getDb()
+    .prepare(
+      `SELECT s.* FROM skills s
+       JOIN agent_skills a ON a.skill_id=s.id
+       WHERE a.agent_id=? AND a.enabled=1
+       ORDER BY s.name COLLATE NOCASE`,
+    )
+    .all(agentId)
+    .map(rowToSkill);
+}
+
+export function agentHasSkill(agentId: string, skillId: string): boolean {
+  const r = getDb()
+    .prepare(`SELECT 1 FROM agent_skills WHERE agent_id=? AND skill_id=? AND enabled=1`)
+    .get(agentId, skillId);
+  return !!r;
+}
+
+export function copyAgentSkills(fromAgentId: string, toAgentId: string): void {
+  const rows = getDb()
+    .prepare(`SELECT skill_id, enabled FROM agent_skills WHERE agent_id=?`)
+    .all(fromAgentId) as { skill_id: string; enabled: number }[];
+  for (const row of rows) setAgentSkill(toAgentId, row.skill_id, !!row.enabled);
+}
+
+// ── routines ────────────────────────────────────────────────────────────
+
+function rowToRoutine(r: any): Routine {
+  return {
+    id: r.id,
+    agentId: r.agent_id,
+    skillId: r.skill_id ?? undefined,
+    name: r.name,
+    prompt: r.prompt,
+    intervalMinutes: r.interval_minutes,
+    enabled: !!r.enabled,
+    nextRunAt: r.next_run_at,
+    lastRunAt: r.last_run_at ?? undefined,
+    lastStatus: r.last_status ?? undefined,
+    createdAt: r.created_at,
+  };
+}
+
+export function createRoutine(input: {
+  agentId: string;
+  skillId?: string;
+  name: string;
+  prompt: string;
+  intervalMinutes: number;
+}): Routine {
+  const id = nanoid(10);
+  const now = Date.now();
+  const interval = Math.max(1, Math.round(input.intervalMinutes));
+  getDb()
+    .prepare(
+      `INSERT INTO routines (id, agent_id, skill_id, name, prompt, interval_minutes, enabled, next_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+    )
+    .run(id, input.agentId, input.skillId ?? null, input.name.trim(), input.prompt.trim(), interval, now + interval * 60_000, now);
+  return getRoutine(id)!;
+}
+
+export function getRoutine(id: string): Routine | undefined {
+  const r = getDb().prepare(`SELECT * FROM routines WHERE id=?`).get(id);
+  return r ? rowToRoutine(r) : undefined;
+}
+
+export function listRoutines(agentId?: string): Routine[] {
+  if (agentId) {
+    return getDb().prepare(`SELECT * FROM routines WHERE agent_id=? ORDER BY name COLLATE NOCASE`).all(agentId).map(rowToRoutine);
+  }
+  return getDb().prepare(`SELECT * FROM routines ORDER BY name COLLATE NOCASE`).all().map(rowToRoutine);
+}
+
+export function updateRoutine(
+  id: string,
+  patch: Partial<Pick<Routine, "name" | "prompt" | "intervalMinutes" | "enabled" | "skillId" | "nextRunAt" | "lastRunAt" | "lastStatus">>,
+): Routine | undefined {
+  const cur = getRoutine(id);
+  if (!cur) return undefined;
+  const interval = patch.intervalMinutes ?? cur.intervalMinutes;
+  getDb()
+    .prepare(
+      `UPDATE routines SET name=?, prompt=?, interval_minutes=?, enabled=?, skill_id=?, next_run_at=?, last_run_at=?, last_status=? WHERE id=?`,
+    )
+    .run(
+      patch.name ?? cur.name,
+      patch.prompt ?? cur.prompt,
+      interval,
+      (patch.enabled ?? cur.enabled) ? 1 : 0,
+      patch.skillId === undefined ? (cur.skillId ?? null) : patch.skillId,
+      patch.nextRunAt ?? cur.nextRunAt,
+      patch.lastRunAt ?? cur.lastRunAt ?? null,
+      patch.lastStatus ?? cur.lastStatus ?? null,
+      id,
+    );
+  return getRoutine(id);
+}
+
+export function deleteRoutine(id: string): void {
+  getDb().prepare(`DELETE FROM routines WHERE id=?`).run(id);
+}
+
+export function listDueRoutines(now: number): Routine[] {
+  return getDb()
+    .prepare(`SELECT * FROM routines WHERE enabled=1 AND next_run_at<=?`)
+    .all(now)
+    .map(rowToRoutine);
+}
+
+export function markRoutineRan(id: string, status: "ok" | "failed" | "running"): Routine | undefined {
+  const cur = getRoutine(id);
+  if (!cur) return undefined;
+  const now = Date.now();
+  return updateRoutine(id, {
+    lastRunAt: now,
+    lastStatus: status,
+    nextRunAt: now + Math.max(1, cur.intervalMinutes) * 60_000,
+  });
 }

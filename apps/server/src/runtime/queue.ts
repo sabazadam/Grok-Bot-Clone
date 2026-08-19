@@ -37,3 +37,12 @@ async function drain(agentId: string): Promise<void> {
 export function pendingCount(agentId: string): number {
   return queues.get(agentId)?.jobs.length ?? 0;
 }
+
+/** Drop queued (not yet started) jobs so a new user message can take priority. */
+export function clearPending(agentId: string): number {
+  const q = queues.get(agentId);
+  if (!q) return 0;
+  const n = q.jobs.length;
+  q.jobs = [];
+  return n;
+}

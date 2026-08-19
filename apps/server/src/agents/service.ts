@@ -98,7 +98,9 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     model: src.model,
     collaborationEnabled: src.collaborationEnabled,
     stealthBrowsing: src.stealthBrowsing,
+    isTeamLead: src.isTeamLead,
   });
+  store.copyAgentSkills(src.id, copy.id);
   const conv = store.createConversation("direct", copy.name, [copy.id]);
   broadcast({ type: "conversation_updated", conversation: conv });
   broadcast({ type: "agent_updated", agent: copy });

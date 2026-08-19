@@ -8,6 +8,9 @@ export type ToolInvocation =
   | { id: string; tool: "send_message_to_agent"; toAgentName: string; text: string }
   | { id: string; tool: "update_memory"; memoryKind: MemoryKind; content: string }
   | { id: string; tool: "request_approval"; description: string; reason: string }
+  | { id: string; tool: "save_skill"; name: string; description: string; instructions: string }
+  | { id: string; tool: "create_agent"; name: string; roleTitle: string; instructions: string; isTeamLead?: boolean }
+  | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes: number; skillName?: string }
   | { id: string; tool: "task_complete"; summary: string };
 
 export interface ToolOutcome {
@@ -91,6 +94,12 @@ export function describeInvocation(inv: ToolInvocation): string {
       const cmd = inv.command.length > 64 ? inv.command.slice(0, 64) + "…" : inv.command;
       return `Ran: ${cmd}`;
     }
+    case "save_skill":
+      return `Saved skill “${inv.name}”`;
+    case "create_agent":
+      return `Created teammate ${inv.name}`;
+    case "create_routine":
+      return `Scheduled “${inv.name}”`;
     case "send_message":
       return "Sent a message";
     case "send_message_to_agent":

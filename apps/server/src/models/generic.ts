@@ -23,6 +23,9 @@ You control the computer by replying with EXACTLY ONE JSON object per turn — n
 {"thought":"...","bash":{"command":"ls ~/workspace","timeoutSec":60}}
 {"thought":"...","update_memory":{"kind":"fact","content":"..."}}           // kind: preference|fact|summary
 {"thought":"...","request_approval":{"description":"...","reason":"..."}}
+{"thought":"...","save_skill":{"name":"...","description":"...","instructions":"..."}}
+{"thought":"...","create_agent":{"name":"...","roleTitle":"...","instructions":"...","isTeamLead":false}}
+{"thought":"...","create_routine":{"name":"...","prompt":"...","intervalMinutes":60,"skillName":"optional"}}
 {"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now
 {"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}
 {"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed
@@ -155,6 +158,35 @@ export class GenericAdapter implements ModelAdapter {
     } else if (obj.request_approval && typeof obj.request_approval === "object") {
       const r = obj.request_approval as Record<string, unknown>;
       inv = { id, tool: "request_approval", description: String(r.description ?? ""), reason: String(r.reason ?? "") };
+    } else if (obj.save_skill && typeof obj.save_skill === "object") {
+      const s = obj.save_skill as Record<string, unknown>;
+      inv = {
+        id,
+        tool: "save_skill",
+        name: String(s.name ?? ""),
+        description: String(s.description ?? ""),
+        instructions: String(s.instructions ?? ""),
+      };
+    } else if (obj.create_agent && typeof obj.create_agent === "object") {
+      const a = obj.create_agent as Record<string, unknown>;
+      inv = {
+        id,
+        tool: "create_agent",
+        name: String(a.name ?? ""),
+        roleTitle: String(a.roleTitle ?? ""),
+        instructions: String(a.instructions ?? ""),
+        isTeamLead: Boolean(a.isTeamLead),
+      };
+    } else if (obj.create_routine && typeof obj.create_routine === "object") {
+      const r = obj.create_routine as Record<string, unknown>;
+      inv = {
+        id,
+        tool: "create_routine",
+        name: String(r.name ?? ""),
+        prompt: String(r.prompt ?? ""),
+        intervalMinutes: Number(r.intervalMinutes ?? 60),
+        skillName: r.skillName ? String(r.skillName) : undefined,
+      };
     } else if (obj.send_message && typeof obj.send_message === "object") {
       inv = { id, tool: "send_message", text: String((obj.send_message as Record<string, unknown>).text ?? "") };
     } else if (typeof obj.send_message === "string") {

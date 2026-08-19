@@ -2,8 +2,9 @@
  * Orchestrator — decides which agents respond to a message and queues tasks.
  *
  * Direct chat: the agent in the conversation responds.
- * Group chat:  @mentioned agents respond; with no mention, all member agents do.
- * Agent-to-agent turns triggered by one user message are capped (loop prevention).
+ * Group chat:  @mentioned agents; @everyone; otherwise team leads (or everyone
+ * if the group has no lead). Skills (/Name) restrict to agents that have them.
+ * A new user message interrupts that agent's current turn (Grok Bot priority).
  */
 import type { Conversation, Message } from "@grokbot/shared";
 import * as store from "../store.js";
@@ -11,13 +12,17 @@ import { config } from "../config.js";
 import { broadcast } from "../bus.js";
 import { enqueue } from "./queue.js";
 import { runAgentTask } from "./runner.js";
+import { extractMentions } from "./dispatch.js";
+import { chooseResponders, composeSkillPrompt, extractSkillInvocation, isStopCommand } from "./dispatch.js";
+import { interruptAgents } from "./interrupt.js";
+
+export { extractMentions } from "./dispatch.js";
 
 /** taskId chain accounting: how many agent turns a root user message has caused */
 const turnBudgets = new Map<string, { used: number }>();
 
 export function newTurnBudget(rootId: string): void {
   turnBudgets.set(rootId, { used: 0 });
-  // prevent unbounded growth
   if (turnBudgets.size > 200) {
     const first = turnBudgets.keys().next().value;
     if (first) turnBudgets.delete(first);
@@ -26,21 +31,20 @@ export function newTurnBudget(rootId: string): void {
 
 export function consumeTurn(rootId: string): boolean {
   const b = turnBudgets.get(rootId);
-  if (!b) return true; // untracked (e.g. server restart) — allow single turn
+  if (!b) return true;
   if (b.used >= config.maxAgentTurns) return false;
   b.used += 1;
   return true;
 }
 
-/** Extract @mentions matching known agent names (case-insensitive, longest first). */
-export function extractMentions(text: string, agents: { id: string; name: string }[]): string[] {
-  const found: string[] = [];
-  const sorted = [...agents].sort((a, b) => b.name.length - a.name.length);
-  for (const a of sorted) {
-    const re = new RegExp(`@${a.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-    if (re.test(text)) found.push(a.id);
-  }
-  return found;
+function postSystem(conversationId: string, text: string): void {
+  const msg = store.addMessage({
+    conversationId,
+    sender: { kind: "system" },
+    kind: "text",
+    text,
+  });
+  broadcast({ type: "message", message: msg });
 }
 
 /** Dispatch a user message to the agents that should act on it. */
@@ -50,22 +54,60 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
     .filter((a): a is NonNullable<typeof a> => !!a);
   if (members.length === 0) return;
 
+  if (isStopCommand(message.text)) {
+    interruptAgents(members.map((m) => m.id));
+    postSystem(
+      conversation.id,
+      "Stopped. In-progress work was cancelled. Actions already completed are not undone.",
+    );
+    return;
+  }
+
+  const skills = store.listSkills();
+  const invoked = extractSkillInvocation(message.text, skills);
+  const skill = invoked ? store.getSkill(invoked.skillId) : undefined;
+  const membersWithSkill = skill ? members.filter((m) => store.agentHasSkill(m.id, skill.id)).map((m) => m.id) : [];
+
+  if (skill && conversation.kind === "direct" && membersWithSkill.length === 0) {
+    postSystem(
+      conversation.id,
+      `Skill "${skill.name}" is not enabled for this agent. Enable it in Profile → Skills.`,
+    );
+    return;
+  }
+
+  const mentioned = extractMentions(message.text, members);
+  const targetIds = chooseResponders({
+    conversationKind: conversation.kind,
+    members,
+    text: message.text,
+    mentionedIds: mentioned,
+    skillId: skill?.id,
+    membersWithSkill,
+  });
+  const targets = members.filter((m) => targetIds.includes(m.id));
+  if (targets.length === 0) {
+    if (skill) {
+      postSystem(
+        conversation.id,
+        `No one in this chat has skill "${skill.name}" enabled.`,
+      );
+    }
+    return;
+  }
+
+  // User message takes priority over whatever those agents were doing.
+  interruptAgents(targets.map((t) => t.id));
   newTurnBudget(message.id);
 
-  let targets = members;
-  if (conversation.kind === "group") {
-    const mentioned = extractMentions(message.text, members);
-    if (mentioned.length > 0) {
-      targets = members.filter((m) => mentioned.includes(m.id));
-    }
-  }
+  const prompt = skill && invoked ? composeSkillPrompt(skill, invoked.rest) : message.text;
 
   for (const agent of targets) {
     enqueue(agent.id, () =>
       runAgentTask({
         agentId: agent.id,
         conversationId: conversation.id,
-        prompt: message.text,
+        prompt,
         rootMessageId: message.id,
         triggeredBy: { kind: "user" },
       }),
@@ -75,9 +117,7 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
 
 /**
  * Deliver an agent-to-agent message into the RECIPIENT'S OWN chat (their direct
- * conversation), then wake them to act on it there. This keeps delegation visible
- * in the target agent's chat instead of spawning separate "agent ↔ agent" threads
- * that would clutter the sidebar. Budget-capped for loop prevention.
+ * conversation), then wake them to act on it there.
  */
 export function deliverAgentMessage(opts: {
   fromAgentId: string;
@@ -108,10 +148,6 @@ export function deliverAgentMessage(opts: {
   return { delivered: true, conversationId: conv.id };
 }
 
-/**
- * Wake an agent to act within an EXISTING conversation (used for group-chat
- * handoffs, where the message is already posted in the group). Enqueue-only.
- */
 export function dispatchAgentMessage(opts: {
   fromAgentId: string;
   toAgentId: string;
@@ -128,6 +164,18 @@ export function dispatchAgentMessage(opts: {
       rootMessageId: opts.rootMessageId,
       triggeredBy: { kind: "agent", agentId: opts.fromAgentId },
     }),
+  );
+  return true;
+}
+
+/** Stop every agent in a conversation (Stop button / API). */
+export function stopConversation(conversationId: string): boolean {
+  const conv = store.getConversation(conversationId);
+  if (!conv) return false;
+  interruptAgents(conv.agentIds);
+  postSystem(
+    conversationId,
+    "Stopped. In-progress work was cancelled. Actions already completed are not undone.",
   );
   return true;
 }

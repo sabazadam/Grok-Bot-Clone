@@ -5,6 +5,9 @@ describe("customTools", () => {
   it("always exposes send_message so agents can report only when necessary", () => {
     const names = customTools(false).map((t) => t.name);
     expect(names).toContain("send_message");
+    expect(names).toContain("save_skill");
+    expect(names).toContain("create_agent");
+    expect(names).toContain("create_routine");
     expect(names).toContain("task_complete");
     expect(names).not.toContain("send_message_to_agent");
     expect(customTools(true).map((t) => t.name)).toContain("send_message_to_agent");

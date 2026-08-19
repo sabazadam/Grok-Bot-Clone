@@ -1,4 +1,4 @@
-import type { Agent, Approval, Conversation, MemoryEntry, Message, Provider } from "@grokbot/shared";
+import type { Agent, Approval, Conversation, MemoryEntry, Message, Provider, Routine, Skill } from "@grokbot/shared";
 
 export interface ProviderInfo {
   id: Provider;
@@ -57,6 +57,18 @@ export const api = {
   approvals: (convId: string) => req<Approval[]>(`/api/conversations/${convId}/approvals`),
   sendMessage: (convId: string, text: string) =>
     req<Message>(`/api/conversations/${convId}/messages`, { method: "POST", body: JSON.stringify({ text }) }),
+  stopConversation: (convId: string) => req<{ ok: boolean }>(`/api/conversations/${convId}/stop`, { method: "POST" }),
+  skills: () => req<Skill[]>("/api/skills"),
+  createSkill: (body: unknown) => req<Skill>("/api/skills", { method: "POST", body: JSON.stringify(body) }),
+  deleteSkill: (id: string) => req<{ ok: boolean }>(`/api/skills/${id}`, { method: "DELETE" }),
+  agentSkills: (agentId: string) => req<(Skill & { enabled: boolean })[]>(`/api/agents/${agentId}/skills`),
+  setAgentSkill: (agentId: string, skillId: string, enabled: boolean) =>
+    req<{ ok: boolean }>(`/api/agents/${agentId}/skills`, { method: "POST", body: JSON.stringify({ skillId, enabled }) }),
+  routines: (agentId?: string) => req<Routine[]>(agentId ? `/api/routines?agentId=${agentId}` : "/api/routines"),
+  createRoutine: (body: unknown) => req<Routine>("/api/routines", { method: "POST", body: JSON.stringify(body) }),
+  updateRoutine: (id: string, body: unknown) => req<Routine>(`/api/routines/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  deleteRoutine: (id: string) => req<{ ok: boolean }>(`/api/routines/${id}`, { method: "DELETE" }),
+  runRoutine: (id: string) => req<{ ok: boolean }>(`/api/routines/${id}/run`, { method: "POST" }),
   approve: (approvalId: string) => req<Approval>(`/api/approvals/${approvalId}/approve`, { method: "POST" }),
   reject: (approvalId: string) => req<Approval>(`/api/approvals/${approvalId}/reject`, { method: "POST" }),
   cancelTask: (taskId: string) => req(`/api/tasks/${taskId}/cancel`, { method: "POST" }),

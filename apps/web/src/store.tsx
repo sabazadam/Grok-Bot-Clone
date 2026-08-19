@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Agent, Approval, Conversation, Message, ServerEvent, Task } from "@grokbot/shared";
+import type { Agent, Approval, Conversation, Message, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
 import { api, type AppConfig } from "./api";
 
 export interface LiveStep {
@@ -20,11 +20,13 @@ interface State {
   liveSteps: Record<string, LiveStep>;
   /** recent sandbox actions per agent (computer panel log, not chat) */
   liveLogs: Record<string, LiveStep[]>;
+  skills: Skill[];
+  routines: Routine[];
   selectedId: string | null;
 }
 
 type Action =
-  | { type: "init"; config: AppConfig; agents: Agent[]; conversations: Conversation[] }
+  | { type: "init"; config: AppConfig; agents: Agent[]; conversations: Conversation[]; skills: Skill[]; routines: Routine[] }
   | { type: "select"; id: string | null }
   | { type: "messages_loaded"; convId: string; messages: Message[] }
   | { type: "approvals_loaded"; approvals: Approval[] }
@@ -42,7 +44,14 @@ function upsert<T extends { id: string }>(arr: T[], item: T): T[] {
 function reducer(state: State, action: Action): State {
   switch (action.type) {
     case "init":
-      return { ...state, config: action.config, agents: action.agents, conversations: action.conversations };
+      return {
+        ...state,
+        config: action.config,
+        agents: action.agents,
+        conversations: action.conversations,
+        skills: action.skills,
+        routines: action.routines,
+      };
     case "agents":
       return { ...state, agents: action.agents };
     case "select":
@@ -99,6 +108,14 @@ function reducer(state: State, action: Action): State {
         case "approval_created":
         case "approval_resolved":
           return { ...state, approvals: { ...state.approvals, [e.approval.id]: e.approval } };
+        case "skill_updated":
+          return { ...state, skills: upsert(state.skills, e.skill) };
+        case "skill_deleted":
+          return { ...state, skills: state.skills.filter((s) => s.id !== e.skillId) };
+        case "routine_updated":
+          return { ...state, routines: upsert(state.routines, e.routine) };
+        case "routine_deleted":
+          return { ...state, routines: state.routines.filter((r) => r.id !== e.routineId) };
         default:
           return state;
       }
@@ -117,6 +134,8 @@ const initial: State = {
   tasks: {},
   liveSteps: {},
   liveLogs: {},
+  skills: [],
+  routines: [],
   selectedId: null,
 };
 
@@ -135,8 +154,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const [config, agents, conversations] = await Promise.all([api.config(), api.agents(), api.conversations()]);
-      dispatch({ type: "init", config, agents, conversations });
+      const [config, agents, conversations, skills, routines] = await Promise.all([
+        api.config(),
+        api.agents(),
+        api.conversations(),
+        api.skills().catch(() => [] as Skill[]),
+        api.routines().catch(() => [] as Routine[]),
+      ]);
+      dispatch({ type: "init", config, agents, conversations, skills, routines });
     })();
   }, []);
 

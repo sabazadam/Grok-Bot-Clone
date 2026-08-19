@@ -103,8 +103,8 @@ export function Sidebar({
     const subtitle =
       single && single.status === "working" && live
         ? live.caption
-        : single
-          ? single.roleTitle || "Agent"
+          : single
+          ? `${single.roleTitle || "Agent"}${single.isTeamLead ? " · lead" : ""}`
           : `${members.length} agents`;
     return (
       <div key={conv.id} className="group relative">

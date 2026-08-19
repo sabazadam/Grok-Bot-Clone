@@ -40,6 +40,12 @@ describe("sandbox vs chat", () => {
     expect(shouldPostToolToChat(ask)).toBe(false);
     expect(shouldPostToolToChat(say)).toBe(true);
     expect(shouldPostToolToChat(dm)).toBe(true);
+    expect(
+      shouldPostToolToChat({ id: "s", tool: "save_skill", name: "X", description: "", instructions: "do it" }),
+    ).toBe(true);
+    expect(
+      shouldPostToolToChat({ id: "a", tool: "create_agent", name: "Scout", roleTitle: "Researcher", instructions: "research" }),
+    ).toBe(true);
   });
 });
 

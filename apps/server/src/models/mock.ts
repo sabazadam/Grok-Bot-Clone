@@ -10,6 +10,9 @@
  *   ask approval to <something>
  *   tell @<AgentName>: <text>
  *   say: <text>
+ *   save skill <Name>: <instructions>
+ *   create agent <Name> as <Role>: <instructions>
+ *   schedule every <N> min: <prompt>
  *   remember: <text>
  *
  * Anything else results in: screenshot → short final reply.
@@ -49,6 +52,30 @@ export class MockAdapter implements ModelAdapter {
         this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
       } else if ((m = line.match(/^say:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "send_message", text: m[1]! });
+      } else if ((m = line.match(/^save skill ([^:]+):\s*(.+)$/i))) {
+        this.queue.push({
+          id: this.id(),
+          tool: "save_skill",
+          name: m[1]!.trim(),
+          description: "",
+          instructions: m[2]!,
+        });
+      } else if ((m = line.match(/^create agent (\S+) as ([^:]+):\s*(.+)$/i))) {
+        this.queue.push({
+          id: this.id(),
+          tool: "create_agent",
+          name: m[1]!,
+          roleTitle: m[2]!.trim(),
+          instructions: m[3]!,
+        });
+      } else if ((m = line.match(/^schedule every (\d+) min:\s*(.+)$/i))) {
+        this.queue.push({
+          id: this.id(),
+          tool: "create_routine",
+          name: "Scheduled",
+          prompt: m[2]!,
+          intervalMinutes: Number(m[1]),
+        });
       } else if ((m = line.match(/open the browser to (\S+)/i))) {
         this.queue.push({
           id: this.id(),

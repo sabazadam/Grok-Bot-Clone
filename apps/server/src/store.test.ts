@@ -28,6 +28,36 @@ describe("agent store", () => {
     const got = store.getAgent(a.id)!;
     expect(got.name).toBe("Nova");
     expect(got.stealthBrowsing).toBe(true);
+    expect(got.isTeamLead).toBe(false);
+  });
+
+  it("persists team lead and skills", () => {
+    const a = makeAgent({ isTeamLead: true });
+    expect(a.isTeamLead).toBe(true);
+    const skill = store.createSkill({
+      name: "Weekly account health",
+      description: "Portfolio review",
+      instructions: "Pull CRM. Do not contact customers.",
+      createdByAgentId: a.id,
+    });
+    expect(store.agentHasSkill(a.id, skill.id)).toBe(true);
+    expect(store.listEnabledSkillsForAgent(a.id).map((s) => s.name)).toEqual(["Weekly account health"]);
+    store.setAgentSkill(a.id, skill.id, false);
+    expect(store.agentHasSkill(a.id, skill.id)).toBe(false);
+  });
+
+  it("schedules routines and lists due ones", () => {
+    const a = makeAgent();
+    const r = store.createRoutine({
+      agentId: a.id,
+      name: "Morning digest",
+      prompt: "Summarize inbox",
+      intervalMinutes: 30,
+    });
+    expect(r.enabled).toBe(true);
+    expect(r.nextRunAt).toBeGreaterThan(Date.now());
+    expect(store.listDueRoutines(Date.now()).map((x) => x.id)).not.toContain(r.id);
+    expect(store.listDueRoutines(Date.now() + 31 * 60_000).map((x) => x.id)).toContain(r.id);
   });
 
   it("honors stealthBrowsing=false and updates it", () => {

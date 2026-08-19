@@ -162,7 +162,11 @@ export function ChatView({
     }
   }
 
-  const working = members.filter((m) => m.status === "working" || m.status === "starting");
+  const working = members.filter((m) => m.status === "working" || m.status === "starting" || m.status === "waiting_approval");
+  const skillHits =
+    draft.startsWith("/") && !draft.includes("\n")
+      ? state.skills.filter((s) => s.name.toLowerCase().startsWith(draft.slice(1).toLowerCase())).slice(0, 6)
+      : [];
 
   return (
     <section className="flex h-full min-w-0 flex-1 flex-col" style={{ background: "var(--bg)" }}>
@@ -185,6 +189,16 @@ export function ChatView({
             style={{ border: "1px solid var(--border)", color: "var(--text)" }}
           >
             Profile
+          </button>
+        )}
+        {working.length > 0 && (
+          <button
+            onClick={() => void api.stopConversation(conversation.id)}
+            className="rounded-full px-3.5 py-1.5 text-xs font-semibold"
+            style={{ background: "color-mix(in srgb, var(--danger) 12%, var(--bg))", color: "var(--danger)", border: "1px solid color-mix(in srgb, var(--danger) 40%, transparent)" }}
+            title="Stop now — cancels in-progress work"
+          >
+            Stop
           </button>
         )}
         {members.length > 0 && (
@@ -240,7 +254,30 @@ export function ChatView({
               {sendError}
             </p>
           )}
-          <div className="flex items-end gap-2">
+          <div className="relative flex items-end gap-2">
+            {skillHits.length > 0 && (
+              <div
+                className="absolute bottom-full left-0 mb-1 w-[min(100%,360px)] overflow-hidden rounded-xl gb-pop"
+                style={{ background: "var(--surface)", border: "1px solid var(--border)", boxShadow: "var(--shadow)" }}
+              >
+                {skillHits.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setDraft(`/${s.name} `)}
+                    className="block w-full px-3 py-2 text-left text-sm"
+                    style={{ color: "var(--text)" }}
+                  >
+                    /{s.name}
+                    {s.description ? (
+                      <span className="ml-2 text-xs" style={{ color: "var(--muted)" }}>
+                        {s.description}
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -251,7 +288,7 @@ export function ChatView({
                 }
               }}
               rows={Math.min(5, Math.max(1, draft.split("\n").length))}
-              placeholder={conversation.kind === "group" ? "Message the group — use @Name to address one agent" : `Message ${conversation.title}…`}
+              placeholder={conversation.kind === "group" ? "Message the group — @Name, @everyone, or /Skill" : `Message ${conversation.title} — /Skill to run a skill`}
               className="flex-1 resize-none rounded-3xl px-4 py-2.5 text-[15px] focus:outline-none"
               style={{ background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)" }}
             />

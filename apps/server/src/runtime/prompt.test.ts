@@ -32,6 +32,21 @@ describe("system prompt reporting policy", () => {
     expect(prompt).not.toMatch(/report back like a capable colleague/);
   });
 
+  it("adds team-lead and skill sections when they apply", () => {
+    const agent = makeAgent({ name: "Piper", isTeamLead: true });
+    store.createSkill({
+      name: "Weekly account health",
+      description: "Portfolio review",
+      instructions: "Pull CRM. Do not contact customers.",
+      createdByAgentId: agent.id,
+    });
+    const prompt = buildSystemPrompt(store.getAgent(agent.id)!);
+    expect(prompt).toMatch(/## Team lead/);
+    expect(prompt).toMatch(/You coordinate/);
+    expect(prompt).toMatch(/\/Weekly account health/);
+    expect(prompt).toMatch(/Pull CRM/);
+  });
+
   it("does not tell teammates they will always report back", () => {
     makeAgent({ name: "Scout", roleTitle: "Researcher" });
     const agent = makeAgent({ name: "Nova" });

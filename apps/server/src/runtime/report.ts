@@ -37,6 +37,9 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
   switch (inv.tool) {
     case "send_message":
     case "send_message_to_agent":
+    case "create_agent":
+    case "create_routine":
+    case "save_skill":
       return true;
     case "computer":
     case "bash":
@@ -51,4 +54,20 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
 export function handoffCaption(toAgentName: string, text: string): string {
   const clipped = text.length > 280 ? `${text.slice(0, 277)}…` : text;
   return `→ @${toAgentName}: ${clipped}`;
+}
+
+/** User-visible caption for an explicit communication / team-structure tool. */
+export function communicationCaption(inv: ToolInvocation): string | undefined {
+  switch (inv.tool) {
+    case "send_message_to_agent":
+      return handoffCaption(inv.toAgentName, inv.text);
+    case "save_skill":
+      return `Saved skill “${inv.name}”. Type /${inv.name} to run it.`;
+    case "create_agent":
+      return `Created teammate @${inv.name}${inv.roleTitle ? ` (${inv.roleTitle})` : ""}.`;
+    case "create_routine":
+      return `Scheduled “${inv.name}” every ${inv.intervalMinutes} minute(s).`;
+    default:
+      return undefined;
+  }
 }

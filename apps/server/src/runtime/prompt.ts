@@ -42,12 +42,33 @@ Message only when it is necessary AND related to the task:
 - send_message — a blocker, a question only the user can answer, a takeover request (password / 2FA / CAPTCHA), or a milestone they explicitly asked to be told about.
 - request_approval — consequential external actions (send, purchase, delete, publish, submit).
 - send_message_to_agent — a real handoff that needs another specialist. Not for broadcasting status.
+- save_skill — after a process works, save how to do it so anyone can run it with /Name.
+- create_agent — only when a job needs a long-lived specialist; ask first if the roster should stay small.
+- create_routine — only after a skill/process is proven; schedule repeating work on your computer.
 - task_complete — the finished result for the requester. If no reply is needed, call it with exactly ACK so nothing is posted.
 Never use send_message (or a teammate DM) to say that you clicked, typed, ran a command, or took a screenshot.`,
   );
 
+  if (agent.isTeamLead) {
+    sections.push(
+      `## Team lead
+You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.`,
+    );
+  }
+
   if (agent.instructions.trim()) {
     sections.push(`## Standing instructions from your manager\n${agent.instructions.trim()}`);
+  }
+
+  const skills = store.listEnabledSkillsForAgent(agent.id);
+  if (skills.length > 0) {
+    const lines = skills
+      .map((s) => `- /${s.name}${s.description ? ` — ${s.description}` : ""}\n${s.instructions}`)
+      .join("\n\n");
+    sections.push(
+      `## Your skills
+The user can invoke these with /Name. When a skill is invoked, follow it. You may also use them on your own when they fit.\n\n${lines}`,
+    );
   }
 
   const memories = store.listMemories(agent.id, 40);
@@ -114,7 +135,7 @@ export function buildTaskPrompt(agent: Agent, conversation: Conversation, opts: 
     );
   } else if (conversation.kind === "group") {
     parts.push(
-      `New message from the user in the group chat "${conversation.title}":\n${opts.prompt}\n\nWork on this. Stay silent until you have a necessary, task-related update or a finished result. You can hand off by mentioning a teammate with @Name in your final reply, or by using send_message_to_agent.`,
+      `New message from the user in the group chat "${conversation.title}":\n${opts.prompt}\n\nWork on this. Stay silent until you have a necessary, task-related update or a finished result.${agent.isTeamLead ? " You are the team lead for unmentioned group requests — own the outcome or hand off." : ""} You can hand off by mentioning a teammate with @Name in your final reply, or by using send_message_to_agent.`,
     );
   } else {
     parts.push(

@@ -24,6 +24,7 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
   const [model, setModel] = useState(existing?.model ?? "");
   const [collaborationEnabled, setCollaborationEnabled] = useState(existing?.collaborationEnabled ?? true);
   const [stealthBrowsing, setStealthBrowsing] = useState(existing?.stealthBrowsing ?? true);
+  const [isTeamLead, setIsTeamLead] = useState(existing?.isTeamLead ?? false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -39,7 +40,7 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
     setBusy(true);
     setError(null);
     try {
-      const body = { name: name.trim(), roleTitle: roleTitle.trim(), instructions, avatarColor, provider, model: model.trim(), collaborationEnabled, stealthBrowsing };
+      const body = { name: name.trim(), roleTitle: roleTitle.trim(), instructions, avatarColor, provider, model: model.trim(), collaborationEnabled, stealthBrowsing, isTeamLead };
       if (existing) {
         await api.updateAgent(existing.id, body);
         await refreshAgents();
@@ -135,6 +136,10 @@ export function AgentModal({ existing, onClose }: { existing?: Agent; onClose: (
           </p>
         )}
 
+        <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
+          <input type="checkbox" checked={isTeamLead} onChange={(e) => setIsTeamLead(e.target.checked)} className="h-4 w-4" />
+          Team lead <span style={{ color: "var(--muted)" }}>(owns unmentioned group messages and delegates)</span>
+        </label>
         <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: "var(--text)" }}>
           <input type="checkbox" checked={collaborationEnabled} onChange={(e) => setCollaborationEnabled(e.target.checked)} className="h-4 w-4" />
           May message other agents (collaboration)

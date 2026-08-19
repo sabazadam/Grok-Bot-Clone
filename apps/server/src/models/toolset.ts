@@ -43,6 +43,41 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
       required: ["description", "reason"],
     },
     {
+      name: "save_skill",
+      description:
+        "Save a reusable skill (how to do a task: when to use it, inputs, steps, validation, output, approval boundaries). Skills are available across teammates; you get it enabled. Use after a process works.",
+      parameters: {
+        name: { type: "string", description: "Short skill name, e.g. Weekly account health" },
+        description: { type: "string", description: "One-line when-to-use" },
+        instructions: { type: "string", description: "Full method: steps, validation, output, what needs approval" },
+      },
+      required: ["name", "instructions"],
+    },
+    {
+      name: "create_agent",
+      description:
+        "Create a focused teammate when a job needs a long-lived owner. Ask the user before creating several. Copies your model settings. In a group, the new teammate joins the group.",
+      parameters: {
+        name: { type: "string", description: "Short unique name" },
+        roleTitle: { type: "string", description: "Job title, e.g. Researcher" },
+        instructions: { type: "string", description: "What they own, how they work, approval boundaries" },
+        isTeamLead: { type: "boolean", description: "If true, they coordinate unmentioned group messages" },
+      },
+      required: ["name", "instructions"],
+    },
+    {
+      name: "create_routine",
+      description:
+        "Schedule repeating work on YOUR computer. Interval is in minutes. Prefer after a skill is proven. The routine posts in your chat when it runs.",
+      parameters: {
+        name: { type: "string", description: "Routine name" },
+        prompt: { type: "string", description: "What to do each run (or extra input if a skill is named)" },
+        intervalMinutes: { type: "number", description: "Minutes between runs (minimum 1)" },
+        skillName: { type: "string", description: "Optional existing skill to run" },
+      },
+      required: ["name", "prompt", "intervalMinutes"],
+    },
+    {
       name: "send_message",
       description:
         "Post a message in this conversation. Use ONLY when the user needs to know something now: a blocker, a question only they can answer, a takeover request, or a milestone they asked to be told about. Do NOT narrate clicks, commands, screenshots, or routine sandbox work.",
@@ -89,6 +124,32 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
     }
     case "request_approval":
       return { id, tool: "request_approval", description: String(args.description ?? ""), reason: String(args.reason ?? "") };
+    case "save_skill":
+      return {
+        id,
+        tool: "save_skill",
+        name: String(args.name ?? ""),
+        description: String(args.description ?? ""),
+        instructions: String(args.instructions ?? ""),
+      };
+    case "create_agent":
+      return {
+        id,
+        tool: "create_agent",
+        name: String(args.name ?? ""),
+        roleTitle: String(args.roleTitle ?? ""),
+        instructions: String(args.instructions ?? ""),
+        isTeamLead: Boolean(args.isTeamLead),
+      };
+    case "create_routine":
+      return {
+        id,
+        tool: "create_routine",
+        name: String(args.name ?? ""),
+        prompt: String(args.prompt ?? ""),
+        intervalMinutes: Number(args.intervalMinutes ?? 60),
+        skillName: args.skillName ? String(args.skillName) : undefined,
+      };
     case "send_message":
       return { id, tool: "send_message", text: String(args.text ?? "") };
     case "task_complete":

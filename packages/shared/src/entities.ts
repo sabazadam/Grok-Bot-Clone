@@ -34,6 +34,11 @@ export interface Agent {
   stealthBrowsing: boolean;
   /** Hidden from the sidebar (archived) — conversation and computer are kept. */
   hidden: boolean;
+  /**
+   * Grok Bot coordinator: in a group without @mentions, team leads own the
+   * request and hand work to specialists.
+   */
+  isTeamLead: boolean;
   status: AgentStatus;
   /** Host ports of this agent's computer, when provisioned */
   computer?: ComputerInfo;
@@ -123,5 +128,40 @@ export interface MemoryEntry {
   agentId: string;
   kind: MemoryKind;
   content: string;
+  createdAt: number;
+}
+
+/** Reusable how-to (Grok Bot skill). Available across agents; enabled per agent. */
+export interface Skill {
+  id: string;
+  name: string;
+  description: string;
+  instructions: string;
+  createdByAgentId?: string;
+  createdAt: number;
+}
+
+export interface AgentSkill {
+  agentId: string;
+  skillId: string;
+  enabled: boolean;
+}
+
+/**
+ * Scheduled run of a prompt (optionally a skill) on one owning agent.
+ * Interval-based — good enough for local use; official Grok Bot also has
+ * weekday clocks and event triggers.
+ */
+export interface Routine {
+  id: string;
+  agentId: string;
+  skillId?: string;
+  name: string;
+  prompt: string;
+  intervalMinutes: number;
+  enabled: boolean;
+  nextRunAt: number;
+  lastRunAt?: number;
+  lastStatus?: "ok" | "failed" | "running";
   createdAt: number;
 }

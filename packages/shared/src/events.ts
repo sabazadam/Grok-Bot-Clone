@@ -1,4 +1,4 @@
-import type { Agent, AgentStatus, Approval, Conversation, Message, Task } from "./entities.js";
+import type { Agent, AgentStatus, Approval, Conversation, Message, Routine, Skill, Task } from "./entities.js";
 
 /** WebSocket events pushed from server to UI. */
 export type ServerEvent =
@@ -16,4 +16,8 @@ export type ServerEvent =
       screenshotUrl?: string;
     }
   | { type: "approval_created"; approval: Approval }
-  | { type: "approval_resolved"; approval: Approval };
+  | { type: "approval_resolved"; approval: Approval }
+  | { type: "skill_updated"; skill: Skill }
+  | { type: "skill_deleted"; skillId: string }
+  | { type: "routine_updated"; routine: Routine }
+  | { type: "routine_deleted"; routineId: string };

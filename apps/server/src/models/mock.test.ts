@@ -28,6 +28,15 @@ describe("MockAdapter reporting", () => {
     expect(d1.assistantText).toBeUndefined();
   });
 
+  it("queues save_skill / create_agent / create_routine directives", async () => {
+    const a = new MockAdapter(init);
+    const d1 = await a.start("New message from the user:\nsave skill Weekly account health: Pull CRM. Do not contact.", "");
+    expect(d1).toMatchObject({
+      kind: "act",
+      invocations: [{ tool: "save_skill", name: "Weekly account health" }],
+    });
+  });
+
   it("ACKs a teammate FYI that needs no action — no chat report", async () => {
     const a = new MockAdapter(init);
     const d = await a.start(

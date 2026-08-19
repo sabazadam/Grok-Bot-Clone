@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
   collaboration_enabled INTEGER NOT NULL DEFAULT 1,
   stealth_browsing INTEGER NOT NULL DEFAULT 1,
   hidden INTEGER NOT NULL DEFAULT 0,
+  is_team_lead INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'off',
   created_at INTEGER NOT NULL
 );
@@ -78,6 +79,33 @@ CREATE TABLE IF NOT EXISTS memories (
   content TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS skills (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  instructions TEXT NOT NULL,
+  created_by_agent_id TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_skills (
+  agent_id TEXT NOT NULL,
+  skill_id TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (agent_id, skill_id)
+);
+CREATE TABLE IF NOT EXISTS routines (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL,
+  skill_id TEXT,
+  name TEXT NOT NULL,
+  prompt TEXT NOT NULL,
+  interval_minutes INTEGER NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  next_run_at INTEGER NOT NULL,
+  last_run_at INTEGER,
+  last_status TEXT,
+  created_at INTEGER NOT NULL
+);
 `;
 
 let db: Database.Database | null = null;
@@ -102,6 +130,9 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("hidden")) {
     d.exec(`ALTER TABLE agents ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!cols.has("is_team_lead")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN is_team_lead INTEGER NOT NULL DEFAULT 0`);
   }
 }
 

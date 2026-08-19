@@ -50,6 +50,12 @@ npm run dev
 
 3. Open the URL setup prints, hit **+ → New agent**, give it a name and a job, and message it.
 
+**Team, skills, routines** (Grok Bot-style):
+
+- Mark one agent **Team lead** so unmentioned group messages go to them; they delegate with `@Name` or `send_message_to_agent`. `@everyone` wakes the whole group.
+- Save a **skill** in Profile (or ask the agent to `save_skill`). Type `/Skill name` in chat to run it. Enable per agent.
+- Add a **routine** (interval + prompt) on an agent; **Test run** does real work. Type **Stop now** or use the Stop button to cancel in-progress work — a new message takes priority.
+
 `scripts/setup.sh` asks **how you'll use GrokBot** (see below). Health check anytime: `node scripts/doctor.mjs`
 
 ## Running it: single device vs. server + commander
@@ -167,8 +173,13 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Models | Grok only | Anthropic / OpenAI / Gemini / any OpenAI-compatible |
 | Hosting | xAI cloud | your machine |
 | Reporting | finish the job; come back for a result, blocker, or approval | same policy: sandbox actions stay on Agent Computer; chat is `send_message` / `task_complete` / approvals only |
+| Skills | `/` menu, save after a working process | yes — `/Name` in chat, Profile toggle, `save_skill` tool |
+| Routines | schedule / event trigger, test run | interval routines + test run (no Slack/GitHub event triggers yet) |
+| Team lead / coordinator | a Bot owns unmentioned group work and delegates | yes — Team lead checkbox, `@Name` / `@everyone` |
+| Mid-task redirect / Stop now | new user message takes priority; “Stop now” cancels | yes |
+| Create a focused Bot | existing Bots can spawn a specialist | yes — `create_agent` |
+| Teach-a-task (record demo) | optional, up to 10 minutes | not yet — write or save a skill instead |
 | Connectors / Plugins / MCP | yes | not yet |
-| Skills, routines, teach-a-task | yes | not yet |
 | Chat attachments, threads, reactions | yes | not yet |
 | Notifications (done / needs input) | desktop + iOS | not yet |
 | Search / pin / @everyone | yes | not yet |

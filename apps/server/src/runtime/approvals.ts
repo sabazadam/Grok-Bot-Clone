@@ -48,6 +48,15 @@ export async function requestApproval(input: {
   });
 }
 
+/** Reject every open approval for these agents (used when the user says Stop now). */
+export function rejectOpenApprovalsForAgents(agentIds: string[]): void {
+  for (const id of agentIds) {
+    for (const a of store.listPendingApprovalsForAgent(id)) {
+      resolvePendingApproval(a.id, "rejected");
+    }
+  }
+}
+
 /** Called from the REST route. */
 export function resolvePendingApproval(id: string, decision: "approved" | "rejected"): Approval | undefined {
   const existing = store.getApproval(id);

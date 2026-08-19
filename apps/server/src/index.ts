@@ -6,6 +6,7 @@ import { registerRoutes } from "./routes.js";
 import { getDb } from "./db.js";
 import { computerManager } from "./computer/manager.js";
 import * as store from "./store.js";
+import { startScheduler } from "./runtime/scheduler.js";
 
 async function main() {
   ensureDataDirs();
@@ -18,6 +19,7 @@ async function main() {
   app.get("/health", async () => ({ ok: true, name: "grokbot-server", time: Date.now() }));
 
   await registerRoutes(app);
+  startScheduler();
 
   // Idle computer auto-stop sweep
   if (config.computerIdleStopMinutes > 0) {

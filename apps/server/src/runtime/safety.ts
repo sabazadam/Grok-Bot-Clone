@@ -69,6 +69,12 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Run shell command:\n$ ${inv.command}`;
     case "computer":
       return `Computer action: ${JSON.stringify(inv.action)}`;
+    case "save_skill":
+      return `Save skill “${inv.name}”`;
+    case "create_agent":
+      return `Create teammate ${inv.name}`;
+    case "create_routine":
+      return `Schedule “${inv.name}” every ${inv.intervalMinutes}m`;
     case "send_message":
       return `Message the conversation: "${inv.text}"`;
     case "send_message_to_agent":

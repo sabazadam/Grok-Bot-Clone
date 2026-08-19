@@ -6,6 +6,8 @@ import type { ToolInvocation, ToolOutcome } from "../models/types.js";
 import { computerManager } from "../computer/manager.js";
 import { config } from "../config.js";
 import * as store from "../store.js";
+import { broadcast } from "../bus.js";
+import * as service from "../agents/service.js";
 import { deliverAgentMessage } from "./orchestrator.js";
 
 export interface ExecContext {
@@ -132,6 +134,87 @@ export async function executeInvocation(
             ? `delivered to ${recipient.name} in their chat; they will act on their own computer and reply only if a result is needed`
             : `NOT delivered — the agent-to-agent turn budget for this request is exhausted`,
           isError: !delivered,
+        },
+      };
+    }
+
+    case "save_skill": {
+      const name = inv.name.trim();
+      if (!name || !inv.instructions.trim()) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: "name and instructions are required", isError: true } };
+      }
+      if (store.getSkillByName(name)) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: `a skill named "${name}" already exists`, isError: true } };
+      }
+      const skill = store.createSkill({
+        name,
+        description: inv.description.trim(),
+        instructions: inv.instructions.trim(),
+        createdByAgentId: agent.id,
+      });
+      broadcast({ type: "skill_updated", skill });
+      return { outcome: { id: inv.id, tool: inv.tool, output: `saved skill "${skill.name}" (enabled for you; others can enable it)` } };
+    }
+
+    case "create_agent": {
+      const name = inv.name.trim();
+      if (!name) return { outcome: { id: inv.id, tool: inv.tool, output: "name is required", isError: true } };
+      if (store.getAgentByName(name)) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: `an agent named "${name}" already exists`, isError: true } };
+      }
+      const roster = store.listAgents().length + store.listConversations().filter((c) => c.kind === "group").length;
+      if (roster >= 50) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: "roster limit reached (50 bots + groups)", isError: true } };
+      }
+      const created = await service.createAgent({
+        name,
+        roleTitle: inv.roleTitle.trim(),
+        instructions: inv.instructions.trim(),
+        avatarColor: agent.avatarColor,
+        provider: agent.provider,
+        model: agent.model,
+        collaborationEnabled: true,
+        stealthBrowsing: agent.stealthBrowsing,
+        isTeamLead: !!inv.isTeamLead,
+      });
+      const conv = store.getConversation(ctx.conversationId);
+      if (conv?.kind === "group" && !conv.agentIds.includes(created.id)) {
+        const updated = store.setConversationAgents(conv.id, [...conv.agentIds, created.id]);
+        if (updated) broadcast({ type: "conversation_updated", conversation: updated });
+      }
+      return { outcome: { id: inv.id, tool: inv.tool, output: `created teammate ${created.name}` } };
+    }
+
+    case "create_routine": {
+      const name = inv.name.trim();
+      if (!name || !inv.prompt.trim()) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: "name and prompt are required", isError: true } };
+      }
+      let skillId: string | undefined;
+      if (inv.skillName) {
+        const skill = store.getSkillByName(inv.skillName);
+        if (!skill) {
+          return { outcome: { id: inv.id, tool: inv.tool, output: `no skill named "${inv.skillName}"`, isError: true } };
+        }
+        skillId = skill.id;
+      }
+      const existing = store.listRoutines(agent.id);
+      if (existing.length >= 50) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: "this agent already has 50 routines", isError: true } };
+      }
+      const routine = store.createRoutine({
+        agentId: agent.id,
+        skillId,
+        name,
+        prompt: inv.prompt.trim(),
+        intervalMinutes: inv.intervalMinutes,
+      });
+      broadcast({ type: "routine_updated", routine });
+      return {
+        outcome: {
+          id: inv.id,
+          tool: inv.tool,
+          output: `scheduled "${routine.name}" every ${routine.intervalMinutes} minute(s); next run ${new Date(routine.nextRunAt).toISOString()}`,
         },
       };
     }
