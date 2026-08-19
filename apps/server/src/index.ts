@@ -14,6 +14,7 @@ async function main() {
   ensureDataDirs();
   getDb();
   service.reconcileStatuses();
+  store.clearStaleRoutineRuns();
   const live = liveModelConfig();
   if (live) {
     const promoted = store.promoteMockAgents(live.provider, live.model);

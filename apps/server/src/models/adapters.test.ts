@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { AnthropicAdapter } from "./anthropic.js";
 import { OpenAIAdapter } from "./openai.js";
 import { GeminiAdapter } from "./gemini.js";
-import { GenericAdapter } from "./generic.js";
+import { boundMessageHistory, GenericAdapter } from "./generic.js";
 import type { AdapterInit } from "./types.js";
 
 function mockFetch(responses: unknown[]): { fn: typeof fetch; calls: { url: string; body: any }[] } {
@@ -207,6 +207,24 @@ describe("GeminiAdapter", () => {
 });
 
 describe("GenericAdapter", () => {
+  it("keeps the system prompt and first task while dropping the middle of a long thread", () => {
+    const messages = [
+      { role: "system" as const, content: "sys" },
+      { role: "user" as const, content: "TASK: original" },
+      ...Array.from({ length: 40 }, (_, i) => ({
+        role: (i % 2 === 0 ? "assistant" : "user") as "assistant" | "user",
+        content: `turn-${i}`,
+      })),
+    ];
+    const bounded = boundMessageHistory(messages, 8);
+    expect(bounded[0]).toEqual({ role: "system", content: "sys" });
+    expect(bounded[1]).toEqual({ role: "user", content: "TASK: original" });
+    expect(bounded.at(-1)?.content).toBe("turn-39");
+    expect(bounded.some((m) => m.content === "turn-0")).toBe(false);
+    expect(bounded.length).toBeLessThan(messages.length);
+    expect(bounded.length).toBeLessThanOrEqual(10);
+  });
+
   it("parses JSON actions (with fences) and finishes on done", async () => {
     const { fn } = mockFetch([
       { choices: [{ message: { content: '```json\n{"thought":"look","computer":{"type":"screenshot"}}\n```' } }] },

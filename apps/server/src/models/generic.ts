@@ -88,6 +88,22 @@ function extractJson(text: string): Record<string, unknown> | undefined {
   return undefined;
 }
 
+/** Keep the system prompt, the original TASK, and the most recent turns. */
+export const GENERIC_HISTORY_TAIL = 16;
+
+export function boundMessageHistory(messages: Msg[], keepTail = GENERIC_HISTORY_TAIL): Msg[] {
+  if (messages.length <= keepTail + 2) return messages;
+  const system = messages[0];
+  const firstUser = messages.find((m, i) => i > 0 && m.role === "user");
+  const tail = messages.slice(-keepTail);
+  const kept = new Set(tail);
+  const out: Msg[] = [];
+  if (system && !kept.has(system)) out.push(system);
+  if (firstUser && firstUser !== system && !kept.has(firstUser)) out.push(firstUser);
+  out.push(...tail);
+  return out;
+}
+
 const VALID_ACTIONS = new Set([
   "screenshot",
   "left_click",
@@ -152,6 +168,8 @@ export class GenericAdapter implements ModelAdapter {
   }
 
   private async call(): Promise<AgentDecision> {
+    this.messages = boundMessageHistory(this.messages);
+    this.trimImages();
     const payload: Record<string, unknown> = {
       model: this.init.model,
       messages: this.messages,
@@ -290,7 +308,6 @@ export class GenericAdapter implements ModelAdapter {
       const text = `Result${o.isError ? " (ERROR)" : ""}: ${o.output || "ok"}${o.screenshotB64 ? "\nCurrent screen:" : ""}`;
       this.messages.push({ role: "user", content: this.userContent(text, o.screenshotB64) });
     }
-    this.trimImages();
     return this.call();
   }
 
