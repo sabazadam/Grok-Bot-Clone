@@ -4,6 +4,7 @@ import type { Agent, AgentStatus, Approval, Conversation, Message, Plugin, Routi
 export type ServerEvent =
   | { type: "message"; message: Message }
   | { type: "agent_updated"; agent: Agent }
+  | { type: "agent_deleted"; agentId: string }
   | { type: "agent_status"; agentId: string; status: AgentStatus }
   | { type: "conversation_updated"; conversation: Conversation }
   | { type: "task_updated"; task: Task }

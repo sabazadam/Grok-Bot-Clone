@@ -177,6 +177,41 @@ export function listAgents(): Agent[] {
   return getDb().prepare(`SELECT * FROM agents ORDER BY created_at ASC`).all().map(rowToAgent);
 }
 
+/** Official Grok Bot caps the sidebar at 50 Bots + group chats combined. */
+export const ROSTER_LIMIT = 50;
+export const GROUP_MEMBER_MIN = 2;
+export const GROUP_MEMBER_MAX = 6;
+
+export function rosterCount(): number {
+  return listAgents().length + listConversations().filter((c) => c.kind === "group").length;
+}
+
+/**
+ * Repair statuses that survived a restart or a seed script (waiting with no
+ * approval, working with no task). Leave `starting` alone so computer boot
+ * is not clobbered.
+ */
+export function reconcileAgentStatuses(): { agentId: string; status: AgentStatus }[] {
+  const changes: { agentId: string; status: AgentStatus }[] = [];
+  for (const agent of listAgents()) {
+    const pending = listPendingApprovalsForAgent(agent.id);
+    const active = listActiveTasksForAgent(agent.id);
+    let next: AgentStatus | undefined;
+    if (pending.length > 0 || active.some((t) => t.status === "waiting_approval")) {
+      next = "waiting_approval";
+    } else if (active.length > 0) {
+      if (agent.status === "starting") continue;
+      next = "working";
+    } else if (agent.status === "waiting_approval" || agent.status === "working") {
+      next = "idle";
+    }
+    if (!next || next === agent.status) continue;
+    setAgentStatus(agent.id, next);
+    changes.push({ agentId: agent.id, status: next });
+  }
+  return changes;
+}
+
 export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undefined {
   const cur = getAgent(id);
   if (!cur) return undefined;
@@ -391,10 +426,12 @@ export function searchMessages(query: string, limit = 40): SearchHit[] {
     .prepare(
       `SELECT m.id as message_id, m.text as text, m.created_at as created_at, m.conversation_id as conversation_id, c.title as title, c.kind as kind
        FROM messages m JOIN conversations c ON c.id = m.conversation_id
-       WHERE m.text LIKE ? ESCAPE '\\' AND c.kind != 'agent_dm'
+       WHERE (m.text LIKE ? ESCAPE '\\' OR IFNULL(m.attachments_json,'') LIKE ? ESCAPE '\\')
+         AND m.sender_kind != 'system'
+         AND c.kind != 'agent_dm'
        ORDER BY m.created_at DESC LIMIT ?`,
     )
-    .all(like, limit) as {
+    .all(like, like, limit) as {
     message_id: string;
     text: string;
     created_at: number;
@@ -614,6 +651,22 @@ export function copyAgentSkills(fromAgentId: string, toAgentId: string): void {
     .prepare(`SELECT skill_id, enabled FROM agent_skills WHERE agent_id=?`)
     .all(fromAgentId) as { skill_id: string; enabled: number }[];
   for (const row of rows) setAgentSkill(toAgentId, row.skill_id, !!row.enabled);
+}
+
+/** Official duplicate copies enabled skills and routines, not history or memory. */
+export function copyAgentRoutines(fromAgentId: string, toAgentId: string): void {
+  for (const routine of listRoutines(fromAgentId)) {
+    const copy = createRoutine({
+      agentId: toAgentId,
+      skillId: routine.skillId,
+      name: routine.name,
+      prompt: routine.prompt,
+      intervalMinutes: routine.intervalMinutes,
+      schedule: routine.schedule,
+      timezone: routine.timezone,
+    });
+    if (!routine.enabled) updateRoutine(copy.id, { enabled: false });
+  }
 }
 
 // ── routines ────────────────────────────────────────────────────────────

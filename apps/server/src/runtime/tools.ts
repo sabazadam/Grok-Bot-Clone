@@ -169,8 +169,7 @@ export async function executeInvocation(
       if (store.getAgentByName(name)) {
         return { outcome: { id: inv.id, tool: inv.tool, output: `an agent named "${name}" already exists`, isError: true } };
       }
-      const roster = store.listAgents().length + store.listConversations().filter((c) => c.kind === "group").length;
-      if (roster >= 50) {
+      if (store.rosterCount() >= store.ROSTER_LIMIT) {
         return { outcome: { id: inv.id, tool: inv.tool, output: "roster limit reached (50 bots + groups)", isError: true } };
       }
       const created = await service.createAgent({

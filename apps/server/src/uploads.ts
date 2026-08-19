@@ -4,8 +4,9 @@ import { nanoid } from "nanoid";
 import type { Attachment } from "@grokbot/shared";
 import { config } from "./config.js";
 
-const MAX_FILES = 4;
-const MAX_BYTES = 6 * 1024 * 1024;
+/** Official desktop allows 6 files / 25MB. We keep a 12MB ceiling so JSON uploads stay practical. */
+export const MAX_ATTACH_FILES = 6;
+export const MAX_ATTACH_BYTES = 12 * 1024 * 1024;
 
 export interface IncomingFile {
   name: string;
@@ -21,9 +22,9 @@ export function uploadsDir(): string {
 
 export function saveAttachments(files: IncomingFile[]): Attachment[] {
   const out: Attachment[] = [];
-  for (const file of files.slice(0, MAX_FILES)) {
+  for (const file of files.slice(0, MAX_ATTACH_FILES)) {
     const raw = Buffer.from(file.dataBase64, "base64");
-    if (!raw.length || raw.length > MAX_BYTES) continue;
+    if (!raw.length || raw.length > MAX_ATTACH_BYTES) continue;
     const id = nanoid(10);
     const safe = file.name.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80) || "file";
     const stored = `${id}_${safe}`;

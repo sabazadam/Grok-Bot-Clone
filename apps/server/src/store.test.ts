@@ -160,6 +160,86 @@ describe("agent store", () => {
     expect(store.searchMessages("x")).toEqual([]);
   });
 
+  it("skips system stop lines and matches attachment names", () => {
+    const a = makeAgent({ name: "Piper" });
+    const conv = store.ensureDirectConversation(a.id);
+    store.addMessage({
+      conversationId: conv.id,
+      sender: { kind: "system" },
+      kind: "text",
+      text: "Stopped. In-progress work was cancelled.",
+    });
+    store.addMessage({
+      conversationId: conv.id,
+      sender: { kind: "user" },
+      kind: "text",
+      text: "see this",
+      attachments: [{ id: "att1", name: "q3-brief.pdf", mime: "application/pdf", url: "/uploads/att1_q3.pdf", size: 800 }],
+    });
+    expect(store.searchMessages("Stopped")).toEqual([]);
+    expect(store.searchMessages("q3-brief").map((h) => h.conversationId)).toEqual([conv.id]);
+  });
+
+  it("reconciles ghost waiting/working statuses", () => {
+    const waiting = makeAgent({ name: "GhostWait" });
+    const working = makeAgent({ name: "GhostWork" });
+    const realWait = makeAgent({ name: "RealWait" });
+    const realWork = makeAgent({ name: "RealWork" });
+    const starting = makeAgent({ name: "Booting" });
+    store.setAgentStatus(waiting.id, "waiting_approval");
+    store.setAgentStatus(working.id, "working");
+    store.setAgentStatus(realWait.id, "idle");
+    store.setAgentStatus(realWork.id, "idle");
+    store.setAgentStatus(starting.id, "starting");
+    const conv = store.ensureDirectConversation(realWait.id);
+    store.createApproval({
+      conversationId: conv.id,
+      agentId: realWait.id,
+      taskId: "t1",
+      actionJson: "{}",
+      actionDescription: "send email",
+      reason: "needs you",
+    });
+    store.createTask(realWork.id, conv.id, "research");
+    const changes = store.reconcileAgentStatuses();
+    expect(store.getAgent(waiting.id)?.status).toBe("idle");
+    expect(store.getAgent(working.id)?.status).toBe("idle");
+    expect(store.getAgent(realWait.id)?.status).toBe("waiting_approval");
+    expect(store.getAgent(realWork.id)?.status).toBe("working");
+    expect(store.getAgent(starting.id)?.status).toBe("starting");
+    expect(changes.map((c) => c.agentId).sort()).toEqual([waiting.id, working.id, realWait.id, realWork.id].sort());
+  });
+
+  it("copies routines when duplicating an agent profile", () => {
+    const a = makeAgent({ name: "Atlas" });
+    store.createRoutine({
+      agentId: a.id,
+      name: "Morning scan",
+      prompt: "Check inbox",
+      intervalMinutes: 60,
+    });
+    const copy = store.createAgent({
+      name: "Atlas copy",
+      roleTitle: a.roleTitle,
+      instructions: a.instructions,
+      avatarColor: a.avatarColor,
+      provider: a.provider,
+      model: a.model,
+      collaborationEnabled: true,
+      stealthBrowsing: true,
+    });
+    store.copyAgentRoutines(a.id, copy.id);
+    expect(store.listRoutines(copy.id).map((r) => r.name)).toEqual(["Morning scan"]);
+    expect(store.listRoutines(copy.id)[0]?.prompt).toBe("Check inbox");
+  });
+
+  it("counts the official 50-item roster", () => {
+    const a = makeAgent({ name: "One" });
+    const b = makeAgent({ name: "Two" });
+    store.createConversation("group", "Desk", [a.id, b.id]);
+    expect(store.rosterCount()).toBe(3);
+  });
+
   it("persists plugins", () => {
     const plugin = store.createPlugin({
       name: "Status hook",

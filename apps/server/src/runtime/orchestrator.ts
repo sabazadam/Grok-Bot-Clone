@@ -14,7 +14,14 @@ import type { Attachment } from "@grokbot/shared";
 import { enqueue, enqueueAndWait } from "./queue.js";
 import { runAgentTask } from "./runner.js";
 import { extractMentions } from "./dispatch.js";
-import { chooseResponders, composeSkillPrompt, extractSkillInvocation, isStopCommand } from "./dispatch.js";
+import {
+  chooseResponders,
+  composeMentionContext,
+  composeSkillPrompt,
+  extractNamedMentions,
+  extractSkillInvocation,
+  isStopCommand,
+} from "./dispatch.js";
 import { interruptAgents } from "./interrupt.js";
 
 const dispatchTokens = new Map<string, { cancelled: boolean }>();
@@ -93,6 +100,20 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
   }
 
   const mentioned = extractMentions(message.text, members);
+  const pluginMentions = extractNamedMentions(
+    message.text,
+    store
+      .listPlugins()
+      .filter((p) => p.enabled)
+      .map((p) => p.name),
+  );
+  const routineMentions = extractNamedMentions(
+    message.text,
+    store.listRoutines().map((r) => r.name),
+  );
+  const attachedRoutines = store
+    .listRoutines()
+    .filter((r) => routineMentions.some((n) => n.toLowerCase() === r.name.toLowerCase()));
   const targetIds = chooseResponders({
     conversationKind: conversation.kind,
     members,
@@ -120,8 +141,11 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
   dispatchTokens.set(conversation.id, token);
 
   const base = skill && invoked ? composeSkillPrompt(skill, invoked.rest) : message.text;
-  const extra = attachmentPrompt(message.attachments);
-  const prompt = extra ? `${base}\n\n${extra}` : base;
+  const extras = [
+    attachmentPrompt(message.attachments),
+    composeMentionContext({ pluginNames: pluginMentions, routines: attachedRoutines }),
+  ].filter(Boolean);
+  const prompt = extras.length ? `${base}\n\n${extras.join("\n")}` : base;
 
   const start = (agentId: string) =>
     runAgentTask({

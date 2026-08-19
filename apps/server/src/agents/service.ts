@@ -31,6 +31,15 @@ export function setStatus(agentId: string, status: AgentStatus): void {
   broadcast({ type: "agent_status", agentId, status });
 }
 
+/** Clear stale waiting/working flags after a restart or a leftover seed. */
+export function reconcileStatuses(): { agentId: string; status: AgentStatus }[] {
+  const changes = store.reconcileAgentStatuses();
+  for (const change of changes) {
+    broadcast({ type: "agent_status", agentId: change.agentId, status: change.status });
+  }
+  return changes;
+}
+
 export async function createAgent(input: store.NewAgent): Promise<Agent> {
   const agent = store.createAgent(input);
   const conv = store.createConversation("direct", agent.name, [agent.id]);
@@ -74,6 +83,7 @@ export async function stopComputer(agentId: string): Promise<void> {
 export async function deleteAgent(agentId: string, deleteData: boolean): Promise<void> {
   await computerManager.destroy(agentId, deleteData).catch(() => undefined);
   store.deleteAgent(agentId);
+  broadcast({ type: "agent_deleted", agentId });
 }
 
 /**
@@ -102,6 +112,7 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     team: src.team,
   });
   store.copyAgentSkills(src.id, copy.id);
+  store.copyAgentRoutines(src.id, copy.id);
   const conv = store.createConversation("direct", copy.name, [copy.id]);
   broadcast({ type: "conversation_updated", conversation: conv });
   broadcast({ type: "agent_updated", agent: copy });

@@ -15,7 +15,7 @@ import { runRoutineNow } from "./runtime/scheduler.js";
 import { resolvePendingApproval } from "./runtime/approvals.js";
 import { cancelTask } from "./runtime/cancel.js";
 import { setTakeover } from "./runtime/takeover.js";
-import { saveAttachments, uploadsDir } from "./uploads.js";
+import { MAX_ATTACH_FILES, saveAttachments, uploadsDir } from "./uploads.js";
 import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
 import { forgetPlugin } from "./plugins/runtime.js";
 
@@ -94,12 +94,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   // ── agents ────────────────────────────────────────────────────────────
   app.get("/api/agents", async () => {
+    service.reconcileStatuses();
     return Promise.all(store.listAgents().map((a) => service.agentWithComputer(a)));
   });
 
   app.post("/api/agents", async (req, reply) => {
     const parsed = agentBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    if (store.rosterCount() >= store.ROSTER_LIMIT) {
+      return reply.code(400).send({ error: "roster limit reached (50 bots + groups)" });
+    }
     if (store.getAgentByName(parsed.data.name)) {
       return reply.code(409).send({ error: `An agent named "${parsed.data.name}" already exists` });
     }
@@ -147,6 +151,9 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/agents/:id/duplicate", async (req, reply) => {
     const { id } = req.params as { id: string };
     if (!store.getAgent(id)) return reply.code(404).send({ error: "not found" });
+    if (store.rosterCount() >= store.ROSTER_LIMIT) {
+      return reply.code(400).send({ error: "roster limit reached (50 bots + groups)" });
+    }
     const copy = await service.duplicateAgent(id);
     return service.agentWithComputer(copy!);
   });
@@ -215,13 +222,23 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/api/conversations", async (req, reply) => {
     const body = z
-      .object({ title: z.string().min(1).max(80), agentIds: z.array(z.string()).min(1) })
+      .object({
+        title: z.string().min(1).max(80),
+        agentIds: z.array(z.string()).min(store.GROUP_MEMBER_MIN).max(store.GROUP_MEMBER_MAX),
+      })
       .safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: body.error.message });
-    for (const id of body.data.agentIds) {
+    if (store.rosterCount() >= store.ROSTER_LIMIT) {
+      return reply.code(400).send({ error: "roster limit reached (50 bots + groups)" });
+    }
+    const uniqueIds = [...new Set(body.data.agentIds)];
+    if (uniqueIds.length < store.GROUP_MEMBER_MIN || uniqueIds.length > store.GROUP_MEMBER_MAX) {
+      return reply.code(400).send({ error: "groups need 2–6 bots" });
+    }
+    for (const id of uniqueIds) {
       if (!store.getAgent(id)) return reply.code(400).send({ error: `unknown agent ${id}` });
     }
-    const conv = store.createConversation("group", body.data.title, body.data.agentIds);
+    const conv = store.createConversation("group", body.data.title, uniqueIds);
     broadcast({ type: "conversation_updated", conversation: conv });
     return conv;
   });
@@ -263,7 +280,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
               dataBase64: z.string().min(1),
             }),
           )
-          .max(4)
+          .max(MAX_ATTACH_FILES)
           .optional(),
       })
       .safeParse(req.body);

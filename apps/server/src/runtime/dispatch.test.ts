@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
   chooseResponders,
+  composeMentionContext,
   composeSkillPrompt,
   extractMentions,
+  extractNamedMentions,
   extractSkillInvocation,
   isStopCommand,
   mentionsEveryone,
@@ -125,5 +127,24 @@ describe("mentionsEveryone / extractMentions", () => {
   it("detects @everyone without treating it as an agent name", () => {
     expect(mentionsEveryone("hey @everyone stand by")).toBe(true);
     expect(extractMentions("hey @Scout and @Writer", members)).toEqual(expect.arrayContaining(["scout", "writer"]));
+  });
+});
+
+describe("extractNamedMentions / composeMentionContext", () => {
+  it("matches plugins and routines by @name", () => {
+    expect(extractNamedMentions("run @Status hook then @Morning scan", ["Status hook", "Morning scan"])).toEqual(
+      expect.arrayContaining(["Status hook", "Morning scan"]),
+    );
+    expect(extractNamedMentions("no mention here", ["Status hook"])).toEqual([]);
+  });
+
+  it("asks the model to prefer attached plugins and treat routines as context", () => {
+    const text = composeMentionContext({
+      pluginNames: ["Status hook"],
+      routines: [{ name: "Morning scan", prompt: "Check inbox" }],
+    });
+    expect(text).toMatch(/Prefer call_plugin/);
+    expect(text).toMatch(/Status hook/);
+    expect(text).toMatch(/Morning scan: Check inbox/);
   });
 });

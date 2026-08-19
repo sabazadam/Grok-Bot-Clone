@@ -14,15 +14,50 @@ export function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Extract @mentions matching known agent names (case-insensitive, longest first). */
-export function extractMentions(text: string, agents: { id: string; name: string }[]): string[] {
+/** Extract @Name tokens that match a known list (case-insensitive, longest first). */
+export function extractNamedMentions(text: string, names: string[]): string[] {
   const found: string[] = [];
-  const sorted = [...agents].sort((a, b) => b.name.length - a.name.length);
-  for (const a of sorted) {
-    const re = new RegExp(`@${escapeRe(a.name)}\\b`, "i");
-    if (re.test(text)) found.push(a.id);
+  const sorted = [...names].filter(Boolean).sort((a, b) => b.length - a.length);
+  for (const name of sorted) {
+    const re = new RegExp(`@${escapeRe(name)}\\b`, "i");
+    if (re.test(text) && !found.some((n) => n.toLowerCase() === name.toLowerCase())) {
+      found.push(name);
+    }
   }
   return found;
+}
+
+/** Extract @mentions matching known agent names (case-insensitive, longest first). */
+export function extractMentions(text: string, agents: { id: string; name: string }[]): string[] {
+  const names = extractNamedMentions(
+    text,
+    agents.map((a) => a.name),
+  );
+  const ids: string[] = [];
+  for (const name of names) {
+    const agent = agents.find((a) => a.name.toLowerCase() === name.toLowerCase());
+    if (agent && !ids.includes(agent.id)) ids.push(agent.id);
+  }
+  return ids;
+}
+
+/** Official @ also attaches plugins (connectors) and routines — not extra wake-ups. */
+export function composeMentionContext(opts: {
+  pluginNames: string[];
+  routines: { name: string; prompt: string }[];
+}): string {
+  const parts: string[] = [];
+  if (opts.pluginNames.length) {
+    parts.push(
+      `The user attached plugin(s): ${opts.pluginNames.join(", ")}. Prefer call_plugin with those names when relevant.`,
+    );
+  }
+  if (opts.routines.length) {
+    parts.push(
+      `The user referenced routine(s):\n${opts.routines.map((r) => `- ${r.name}: ${r.prompt}`).join("\n")}`,
+    );
+  }
+  return parts.join("\n");
 }
 
 export function isStopCommand(text: string): boolean {
