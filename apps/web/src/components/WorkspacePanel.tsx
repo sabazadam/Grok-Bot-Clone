@@ -66,36 +66,57 @@ export function WorkspacePanel({
         </button>
       </div>
 
-      <div className="mt-8 flex flex-1 flex-col items-center px-6 text-center">
-        <p className="max-w-[220px] text-[13px] leading-relaxed" style={{ color: "var(--muted)" }}>
-          Routines are recurring tasks this Bot runs on a schedule.
-        </p>
-        <button
-          onClick={onCreateRoutine}
-          className="mt-4 rounded-full px-4 py-2 text-[13px] font-medium"
-          style={{ background: "var(--surface)", color: "var(--text)" }}
-        >
-          Create Routine
-        </button>
-        <button
-          onClick={onTeach}
-          className="mt-2 rounded-full px-4 py-2 text-[13px] font-medium"
-          style={{ background: "var(--surface)", color: "var(--text)" }}
-        >
-          Teach a task
-        </button>
-        {routines.length > 0 && (
-          <div className="mt-5 w-full space-y-2 text-left">
+      <div className="mt-6 flex flex-1 flex-col overflow-y-auto px-4">
+        <div className="mb-2 flex items-center justify-between">
+          <span className="text-[13px] font-semibold" style={{ color: "var(--text)" }}>
+            Routines
+          </span>
+          <button
+            onClick={onCreateRoutine}
+            title="Add routine"
+            className="grid h-6 w-6 place-items-center rounded-full text-[16px] leading-none"
+            style={{ color: "var(--muted)" }}
+          >
+            +
+          </button>
+        </div>
+        {routines.length === 0 ? (
+          <p className="text-[12px] leading-relaxed" style={{ color: "var(--muted)" }}>
+            Recurring tasks this Bot runs on a schedule. Add one with +.
+          </p>
+        ) : (
+          <div className="space-y-1.5">
             {routines.map((r) => (
-              <div key={r.id} className="rounded-xl px-3 py-2" style={{ background: "var(--surface)" }}>
-                <div className="text-[13px] font-medium">{r.name}</div>
-                <div className="text-[11px]" style={{ color: "var(--muted)" }}>
-                  {r.scheduleLabel || `every ${r.intervalMinutes}m`}
-                </div>
-              </div>
+              <button
+                key={r.id}
+                onClick={onCreateRoutine}
+                className="flex w-full items-start gap-2 rounded-xl px-3 py-2 text-left"
+                style={{ background: "var(--surface)" }}
+                title={r.enabled ? "Enabled" : "Paused"}
+              >
+                <span
+                  className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                  style={{ background: r.enabled ? "var(--ok)" : "var(--muted)" }}
+                />
+                <span className="min-w-0">
+                  <span className="block truncate text-[13px] font-medium" style={{ color: "var(--text)" }}>
+                    {r.name}
+                  </span>
+                  <span className="block text-[11px]" style={{ color: "var(--muted)" }}>
+                    {r.scheduleLabel || `every ${r.intervalMinutes}m`}
+                  </span>
+                </span>
+              </button>
             ))}
           </div>
         )}
+        <button
+          onClick={onTeach}
+          className="mt-3 rounded-full px-4 py-2 text-[13px] font-medium"
+          style={{ border: "1px solid var(--border)", color: "var(--text)" }}
+        >
+          Teach a task
+        </button>
       </div>
 
       <div className="flex items-center gap-2 px-4 py-3" style={{ color: "var(--muted)" }}>

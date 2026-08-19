@@ -3,7 +3,9 @@ import type { Agent, Attachment, Conversation, Message } from "@grokbot/shared";
 import { api, type IncomingAttachment } from "../api";
 import { useStore } from "../store";
 import { Avatar } from "./Avatar";
-import { dayStamp, handoffPeerName, handoffVerb, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
+import { DelegationCard } from "./DelegationCard";
+import { DelegationTree } from "./DelegationTree";
+import { dayStamp, handoffPeerName, handoffVerb, isDelegationLine, isHandoffLine, newDividerIndex, shouldStamp } from "../format";
 
 const REACTIONS = ["👍", "❤️", "😂", "🎉", "👀"];
 const MAX_ATTACH_FILES = 6;
@@ -156,11 +158,13 @@ function Bubble({
   agent,
   highlight,
   onOpenHandoff,
+  onOpenTree,
 }: {
   message: Message;
   agent?: Agent;
   highlight?: boolean;
   onOpenHandoff: (conversationId: string) => void;
+  onOpenTree?: () => void;
 }) {
   const { state } = useStore();
   const [busy, setBusy] = useState(false);
@@ -237,6 +241,10 @@ function Bubble({
     );
   }
 
+  if (isDelegationLine(message.text)) {
+    return <DelegationCard message={message} sender={agent} onOpen={onOpenHandoff} onOpenTree={onOpenTree} />;
+  }
+
   if (isHandoffLine(message.text) || message.relatedConversationId) {
     return <HandoffChip message={message} agent={agent} onOpen={onOpenHandoff} />;
   }
@@ -246,7 +254,10 @@ function Bubble({
   const [picker, setPicker] = useState(false);
   const reactions = Object.entries(message.reactions ?? {}).filter(([, n]) => n > 0);
   return (
-    <div id={`msg-${message.id}`} className={`group my-2.5 ${highlight ? "gb-highlight" : ""}`}>
+    <div
+      id={`msg-${message.id}`}
+      className={`group my-2.5 flex flex-col ${isUser ? "items-end" : "items-start"} ${highlight ? "gb-highlight" : ""}`}
+    >
       {!isUser && !isSystem && agent && (
         <div className="mb-1 flex items-center gap-2">
           <Avatar agent={agent} size={18} />
@@ -255,14 +266,12 @@ function Bubble({
           </span>
         </div>
       )}
-      {isUser && (
-        <div className="mb-1 text-[12px]" style={{ color: "var(--muted)" }}>
-          You
-        </div>
-      )}
       <div
         className="max-w-[520px] rounded-2xl px-3.5 py-2.5 text-[15px] leading-[1.45] whitespace-pre-wrap"
-        style={{ background: "var(--bubble)", color: "var(--bubble-text)" }}
+        style={{
+          background: isUser ? "var(--bubble-user)" : "var(--bubble-agent)",
+          color: isUser ? "var(--bubble-user-text)" : "var(--bubble-agent-text)",
+        }}
       >
         {message.text}
         {message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
@@ -340,6 +349,7 @@ export function ChatView({
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<IncomingAttachment[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [showTree, setShowTree] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -503,6 +513,7 @@ export function ChatView({
               agent={m.sender.kind === "agent" ? agentById.get(m.sender.agentId) : undefined}
               highlight={m.id === highlightMessageId}
               onOpenHandoff={onOpenHandoff}
+              onOpenTree={() => setShowTree(true)}
             />
           </div>
         ))}
@@ -643,6 +654,7 @@ export function ChatView({
           </div>
         </div>
       </footer>
+      {showTree && <DelegationTree onClose={() => setShowTree(false)} />}
     </section>
   );
 }

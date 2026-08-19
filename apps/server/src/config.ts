@@ -57,13 +57,36 @@ export const config = {
   ),
   browserTimezone: env("BROWSER_TIMEZONE", "America/New_York"),
   browserLocale: env("BROWSER_LOCALE", "en-US"),
+  /** Default browser engine for new agents: "chromium" (default) or "camoufox" (hard sites). */
+  browserEngineDefault: env("BROWSER_ENGINE", "chromium"),
 
   /** Max computer-use loop steps per task */
   maxTaskSteps: Number(env("MAX_TASK_STEPS", "60")),
   /** Max agent-to-agent turns triggered by one user message (loop prevention) */
   maxAgentTurns: Number(env("MAX_AGENT_TURNS", "8")),
 
+  /** Delegation (hierarchical multi-agent) */
+  // How deep the delegation tree may go. 1 = flat (Lead → specialists). 2 = nested orchestrators.
+  maxSpawnDepth: Number(env("MAX_SPAWN_DEPTH", "1")),
+  // How many delegated sub-tasks run at once (keep under MAX_RUNNING_COMPUTERS).
+  delegateConcurrency: Number(env("DELEGATE_CONCURRENCY", "2")),
+  // Default per-sub-task timeout (seconds).
+  delegateDefaultTimeoutSec: Number(env("DELEGATE_TIMEOUT_SEC", "300")),
+  // Spawned specialists are permanent; their computer is stopped after this many idle minutes
+  // (history + files persist). Shorter than the global idle stop below.
+  specialistIdleStopMinutes: Number(env("SPECIALIST_IDLE_STOP_MINUTES", "10")),
+
   agentDesktopImage: env("AGENT_DESKTOP_IMAGE", "grokbot/agent-desktop:latest"),
+
+  /** Code Guardian (repo-health reviewer). */
+  // Create the permanent "Code Guardian" agent + skill + (disabled) routine on boot.
+  codeGuardianEnabled: env("CODE_GUARDIAN", "0") === "1",
+  // Default repo Code Guardian reviews (git URL or a path). Optional; a request can name another.
+  codeGuardianRepo: env("CODE_GUARDIAN_REPO", ""),
+  // Branch that a push webhook must target to trigger a review.
+  codeGuardianBranch: env("CODE_GUARDIAN_BRANCH", "main"),
+  // Shared secret for the inbound git webhook (POST /api/hooks/git). Empty = webhook disabled.
+  gitWebhookSecret: env("GIT_WEBHOOK_SECRET", ""),
 
   /** Built web UI directory; when present it's served at "/" so the whole app runs on one port. */
   webDist: env("WEB_DIST", path.resolve(process.cwd(), "../web/dist")),

@@ -77,6 +77,8 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Schedule “${inv.name}”${inv.schedule ? ` (${inv.schedule})` : inv.intervalMinutes ? ` every ${inv.intervalMinutes}m` : ""}`;
     case "send_message":
       return `Message the conversation: "${inv.text}"`;
+    case "send_image":
+      return inv.path ? `Send image ${inv.path} to the chat` : "Send a screenshot to the chat";
     case "send_message_to_agent":
       return `Message @${inv.toAgentName}: "${inv.text}"`;
     case "request_approval":
@@ -87,5 +89,7 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Finish task: ${inv.summary}`;
     case "call_plugin":
       return `Call plugin ${inv.pluginId}.${inv.toolName}`;
+    case "delegate_task":
+      return `Delegate ${inv.tasks.length} task(s) to ${inv.tasks.map((t) => t.agentName || t.spawn?.name).filter(Boolean).join(", ") || "specialists"}`;
   }
 }

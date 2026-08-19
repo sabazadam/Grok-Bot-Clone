@@ -75,11 +75,11 @@ export function BotFace({
   const uid = useId().replace(/:/g, "");
   const clipId = `gb-clip-${uid}`;
   const gradId = `gb-grad-${uid}`;
-  const shineId = `gb-shine-${uid}`;
-  const eyeY = shape === "drop" ? 44 : shape === "triangle" ? 48 : shape === "cloud" ? 40 : shape === "pill" ? 38 : 36;
-  const eyeW = size < 22 ? 12 : 11;
-  const eyeH = size < 22 ? 22 : 20;
-  const gap = shape === "pill" ? 22 : 25;
+  // Eyes are vertically centered on the face; nudge per-shape so they sit in the "mass" of the shape.
+  const eyeCy = shape === "drop" ? 56 : shape === "triangle" ? 60 : shape === "cloud" ? 50 : shape === "hexagon" ? 52 : 50;
+  const eyeW = 13;
+  const eyeH = 26;
+  const gap = 22;
 
   return (
     <svg
@@ -92,15 +92,12 @@ export function BotFace({
       role="img"
     >
       <defs>
-        <radialGradient id={gradId} cx="35%" cy="28%" r="75%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.3" />
-          <stop offset="50%" stopColor={color} stopOpacity="0" />
-          <stop offset="100%" stopColor="#000000" stopOpacity="0.14" />
-        </radialGradient>
-        <radialGradient id={shineId} cx="36%" cy="28%" r="24%">
-          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.6" />
-          <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
-        </radialGradient>
+        {/* Subtle top-down sheen for soft volume — matte, not glossy (matches official Grok Bot). */}
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.12" />
+          <stop offset="45%" stopColor="#ffffff" stopOpacity="0" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0.12" />
+        </linearGradient>
         <clipPath id={clipId}>
           <path d={shapePath(shape)} />
         </clipPath>
@@ -108,10 +105,25 @@ export function BotFace({
       <path d={shapePath(shape)} fill={color} />
       <g clipPath={`url(#${clipId})`}>
         <path d={shapePath(shape)} fill={`url(#${gradId})`} />
-        <ellipse cx="36" cy="28" rx="16" ry="11" fill={`url(#${shineId})`} />
         <g className="gb-eyes">
-          <rect className="gb-eye" x={50 - gap} y={eyeY} width={eyeW} height={eyeH} rx={eyeW / 2} fill="#fff" />
-          <rect className="gb-eye" x={50 + gap - eyeW} y={eyeY} width={eyeW} height={eyeH} rx={eyeW / 2} fill="#fff" />
+          <rect
+            className="gb-eye"
+            x={50 - gap}
+            y={eyeCy - eyeH / 2}
+            width={eyeW}
+            height={eyeH}
+            rx={eyeW / 2}
+            fill="#fff"
+          />
+          <rect
+            className="gb-eye"
+            x={50 + gap - eyeW}
+            y={eyeCy - eyeH / 2}
+            width={eyeW}
+            height={eyeH}
+            rx={eyeW / 2}
+            fill="#fff"
+          />
         </g>
       </g>
     </svg>

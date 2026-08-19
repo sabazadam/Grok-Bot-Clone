@@ -7,6 +7,7 @@ import { OpenAIAdapter } from "./openai.js";
 import { GeminiAdapter } from "./gemini.js";
 import { GenericAdapter } from "./generic.js";
 import { MockAdapter } from "./mock.js";
+import { resolveAllowedTools } from "../runtime/toolPolicy.js";
 
 export * from "./types.js";
 
@@ -17,6 +18,7 @@ export function createAdapter(agent: Agent, systemPrompt: string, fetchFn?: type
     resolution: parseResolution(config.computerResolution),
     apiKey: "",
     collaborationEnabled: agent.collaborationEnabled,
+    allowedTools: [...resolveAllowedTools(agent)],
     fetchFn,
   };
 

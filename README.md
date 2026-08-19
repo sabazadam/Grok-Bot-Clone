@@ -14,6 +14,19 @@ your own machine (built for an Apple Silicon Mac mini).
   (a result, a blocker, or an approval), same as Grok Bot.
 - **Agents talk to each other** — direct messages and group chats with @mentions; delegation and
   handoffs happen on their own computers, with hard turn budgets so they can't loop forever.
+- **Hierarchical delegation** — a Team Lead can `delegate_task` to specialist sub-agents (spawned on
+  demand or reused), running **in parallel** with isolated context; only a **structured summary**
+  comes back, so the leader's context never explodes. The chat shows a live delegation card and a
+  **Leader → Researcher → Coder** tree. See [Roles & delegation](#roles--delegation).
+- **Roles & tool policies** — every agent has a first-class **tool policy** (Full / Research /
+  Coding / Browser-only / Review-only / Custom) enforced at three layers, so a Researcher can't run
+  dangerous shell commands and a reviewer doesn't get browser stealth.
+- **Choice of browser engine** — Chromium (default) **or Camoufox**, a Firefox-based, engine-level
+  anti-detect browser for hard sites. Per-agent toggle; the live desktop is identical either way.
+  See [Browser engines](#browser-engines).
+- **Code Guardian** (optional) — a permanent repo-health reviewer that runs on a schedule or on a
+  **push-to-main webhook**, categorizes findings (bugs / performance / security / improvements), and
+  DMs the Team Lead. It only suggests — never auto-merges. See [Code Guardian](#code-guardian).
 - **Approvals** — consequential actions (deleting, sending, purchasing, `rm -rf`, force-pushes…)
   stop and ask you first, showing the exact pending command. Passwords/2FA use **Take over**:
   you drive the agent's screen directly while the agent pauses.
@@ -111,25 +124,58 @@ your Developer ID identity and notarization credentials to `apps/desktop/electro
 
 Create an agent and set its **model** to `mock-scripted` — a deterministic test model that
 understands simple directives (`run: <cmd>`, `open the browser to <url>`,
-`tell @Agent: <msg>`, `ask approval to <thing>`, `remember: <note>`). It exercises the whole
-pipeline (real containers, real clicks) with no LLM calls.
+`tell @Agent: <msg>`, `ask approval to <thing>`, `remember: <note>`, and for delegation
+`delegate to <Name>: <goal>`, `spawn <Name> as <Role>: <goal>`,
+`delegate parallel: A=<goal>; B=<goal>`). It exercises the whole pipeline (real containers, real
+clicks, real delegation) with no LLM calls.
 
 ## How it works
 
 ```
-Browser UI (React, iMessage-style)
+Browser UI (React, iMessage-style)  — chat, delegation cards, task tree, role badges
    │  REST + WebSocket
 Node server (Fastify + SQLite)
    ├── Orchestrator: routes messages → per-agent serial task queues (parallel across agents)
    ├── Runner: screenshot → model action → execute → repeat  (per-provider adapters)
+   │      └── tool policy enforced (schema + exec guard + prompt)
+   ├── Delegation: delegate_task → spawn/await specialists → structured result (persisted tree)
    ├── Safety: rule engine + provider safety flags → approval cards; takeover pause
-   └── ComputerManager (dockerode)
-          │ one container per agent
-   ┌──────┴───────────────────────────────┐
-   │ agentos-<id>  (grokbot/agent-desktop)│   Debian + Xvfb + openbox + tint2
-   │  actuator API :8090 (xdotool/scrot)  │   Chromium, xterm, pcmanfm, mousepad
-   │  noVNC :6080  (live view/takeover)   │   volume: /home/agent persists
-   └──────────────────────────────────────┘
+   ├── Scheduler + git webhook (/api/hooks/git) → routines / Code Guardian reviews
+   └── ComputerBackend  ── DockerComputerBackend (dockerode) ──┐  (interface; host backend later)
+          │ one container per agent                             │
+   ┌──────┴─────────────────────────────────────┐              │
+   │ agentos-<id>  (grokbot/agent-desktop)       │  Debian + Xvfb + openbox + tint2
+   │  actuator API :8090 (xdotool/scrot/xclip)   │  browser engine: Chromium | Camoufox
+   │   └ human-like mouse/typing/scroll          │  xterm, pcmanfm, mousepad, git
+   │  noVNC :6080  (live view/takeover)          │  volume: /home/agent persists
+   └─────────────────────────────────────────────┘
+
+Delegation hierarchy (persisted, shown as a tree):
+   Team Lead ──delegate_task──▶ Researcher (research policy)   ─┐ parallel, isolated context
+             └────────────────▶ Coder      (coding policy)     ─┘ → only a structured summary returns
+```
+
+```mermaid
+flowchart TD
+  U[User] -->|REST + WS| ORC[Orchestrator]
+  GH[GitHub push] -->|/api/hooks/git| ORC
+  CRON[Scheduler / routines] --> ORC
+  ORC --> Q[Per-agent serial queues]
+  Q --> R[Runner: screenshot → model → act → repeat]
+  R --> TP{Tool policy gate}
+  TP --> BK[ComputerBackend → Docker desktop]
+  subgraph Desktop [agentos-&lt;id&gt;: Xvfb + openbox + actuator + noVNC]
+    BE[Browser engine: Chromium or Camoufox]
+    SH[bash / files / git]
+  end
+  BK --> Desktop
+  R -->|delegate_task| DEL[Delegation: spawn/await specialists]
+  DEL --> LEAD[Team Lead]
+  LEAD --> RES[Researcher · research policy]
+  LEAD --> COD[Coder · coding policy]
+  RES -->|structured result| LEAD
+  COD -->|structured result| LEAD
+  CG[Code Guardian · review-only] -->|report + DM| LEAD
 ```
 
 - Ports bind to **127.0.0.1 only** (host and containers) — nothing is exposed to your network.
@@ -155,6 +201,81 @@ To run without your own developer key today: use `mock-scripted`, or put a real 
 is not implemented — adding it means a device-code login, token refresh, and a new provider
 id; xAI has also been seen to 403 some SuperGrok tiers on that OAuth surface.
 
+## Roles & delegation
+
+Every agent has a **tool policy** that scopes what it may do — a preset (or a custom allow-list):
+
+| Policy | Can use | Good for |
+|---|---|---|
+| **Full** | everything (incl. `delegate_task`) | Team Leads / general agents |
+| **Research** | computer, bash, plugins, message teammates | web research + read |
+| **Coding** | bash, computer, plugins, `save_skill` | writing code/files |
+| **Browser-only** | computer, plugins | pure GUI browsing |
+| **Review-only** | bash, plugins | inspect + report (Code Guardian) |
+| **Custom** | your explicit allow-list | anything bespoke |
+
+Reporting/safety tools (`send_message`, `request_approval`, `task_complete`, `update_memory`) are
+always available. The policy is enforced in three layers: the tool schema sent to the model omits
+disallowed tools, the server **refuses** a disallowed tool even if a model ignores the schema, and
+the system prompt states the policy. Set it per agent in **Agent → Tool policy**.
+
+**Delegation.** A Team Lead (or any Full-policy agent) can call `delegate_task` with one or more
+sub-tasks:
+
+- Each sub-task goes to an **existing teammate** (`agentName`) or **spawns a new permanent
+  specialist** (`spawn`, with its own restricted tool policy).
+- Sub-agents run in **their own private thread** with **isolated context** — only the goal + context
+  you pass, never the parent's whole transcript.
+- Sub-tasks run **in parallel** (up to `DELEGATE_CONCURRENCY`), each with a timeout and step cap.
+- Only a **distilled structured result** returns to the parent, so its context stays small — this is
+  the key to answering a complex request without the leader's context exploding.
+- `MAX_SPAWN_DEPTH` (default 1 = flat) bounds nesting; leaf specialists can't sub-delegate. Turn
+  budgets still apply so nothing can loop forever.
+
+Spawned specialists are **permanent teammates** (full conversation history is kept, badged
+*Specialist* in the sidebar). To avoid stalled containers, a specialist's *computer* is stopped
+after `SPECIALIST_IDLE_STOP_MINUTES` (default 10) — its files + history persist and the computer
+reboots on the next task. In chat you'll see a **delegation card** with each specialist's live
+status; a **View tree** button shows the *Leader → Researcher → Coder* hierarchy.
+
+## Browser engines
+
+Each agent's computer can run one of two browsers (per-agent toggle in **Agent → Browser engine**;
+global default via `BROWSER_ENGINE`):
+
+- **Chromium** (default) — the bundled Chromium plus the JS **stealth extension** (spoofs WebGL
+  vendor/renderer, adds canvas/audio noise, hides automation signals).
+- **Camoufox** — a Firefox-based, **engine-level** anti-detect browser for hard sites. Its
+  fingerprint config is injected via `CAMOU_CONFIG` at the C++ level.
+
+Either way the browser is driven by **OS-level input** (xdotool), not WebDriver/CDP, so
+`navigator.webdriver` stays false and there's no headless UA. Switching engines applies live (no
+container recreate). Camoufox is **bundled in the agent image by default** (`npm run image:build`);
+build with `bash images/agent-desktop/build.sh --no-camoufox` to skip it for offline/CI builds (the
+wrapper then falls back to Chromium). For the hardest sites, pair Camoufox with **residential
+proxies** and a **consistent profile** — the browser alone isn't a silver bullet.
+
+## Code Guardian
+
+An optional, permanent **repo-health reviewer** (inspired by Cursor Automations). Enable it by
+setting `CODE_GUARDIAN=1` (or just setting `GIT_WEBHOOK_SECRET`), or seed it manually:
+
+```bash
+npx tsx apps/server/scripts/seed-code-guardian.ts
+```
+
+This creates a **Review-only** agent named *Code Guardian*, a `/Codebase health review` skill, and a
+**disabled** *Hourly main-branch review* routine (enable it in the Routines panel). When it runs it
+clones/pulls the target repo (`CODE_GUARDIAN_REPO`, or one named in the request), inspects it, runs
+tests/linters if present, and writes a categorized report — **bugs / performance / security /
+improvements** — to `~/workspace/reports/`, then DMs the Team Lead. It **never** auto-merges; opening
+a PR requires your approval.
+
+**Push-to-main trigger.** Set `GIT_WEBHOOK_SECRET` and point a GitHub push webhook at
+`POST /api/hooks/git`, sending the secret as the `x-webhook-token` header (or `?token=`). A push to
+`CODE_GUARDIAN_BRANCH` (default `main`) kicks off a review; other branches are ignored. The endpoint
+is **disabled** unless the secret is set, and the token is checked in constant time.
+
 ## Configuration
 
 Copy `.env.example` → `.env`. Notable settings:
@@ -168,9 +289,18 @@ Copy `.env.example` → `.env`. Notable settings:
 | `COMPUTER_RESOLUTION` | 1280x800 | desktop size per agent |
 | `MAX_TASK_STEPS` | 60 | per-task action cap |
 | `MAX_AGENT_TURNS` | 8 | agent↔agent turns per user request (loop prevention) |
+| `MAX_SPAWN_DEPTH` | 1 | delegation depth (1 = flat; 2 = nested orchestrators) |
+| `DELEGATE_CONCURRENCY` | 2 | delegated sub-tasks run in parallel (keep ≤ `MAX_RUNNING_COMPUTERS`) |
+| `DELEGATE_TIMEOUT_SEC` | 300 | default per-sub-task timeout |
+| `SPECIALIST_IDLE_STOP_MINUTES` | 10 | idle-stop a spawned specialist's computer (history persists) |
+| `BROWSER_ENGINE` | `chromium` | default engine for new agents (`chromium` or `camoufox`) |
 | `BROWSER_USER_AGENT` | current desktop Chrome UA | UA presented by stealth browsing |
 | `BROWSER_TIMEZONE` | `America/New_York` | timezone the stealth browser reports |
 | `BROWSER_LOCALE` | `en-US` | locale the stealth browser reports |
+| `CODE_GUARDIAN` | `0` | seed the Code Guardian repo-health agent on boot |
+| `CODE_GUARDIAN_REPO` | — | default repo Code Guardian reviews |
+| `CODE_GUARDIAN_BRANCH` | `main` | branch a push webhook must target |
+| `GIT_WEBHOOK_SECRET` | — | token for `POST /api/hooks/git` (empty = webhook disabled) |
 
 ## Development
 
@@ -182,9 +312,11 @@ npm run image:build  # rebuild the agent OS image
 RUN_DOCKER_TESTS=1 npm run test:integration -w apps/server   # real-Docker container tests
 ```
 
-Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
+Repo layout: `apps/server` (Fastify API + runtime — orchestrator, runner, delegation, tool policy,
+Code Guardian, computer backend), `apps/web` (React UI — chat, delegation card/tree, role badges),
 `apps/desktop` (Electron macOS app), `packages/shared` (types + action schema),
-`images/agent-desktop` (the agent OS), `scripts/` (setup, doctor).
+`images/agent-desktop` (the agent OS: actuator, browser wrapper, Camoufox), `scripts/` (setup,
+doctor). Seeds: `apps/server/scripts/seed-code-guardian.ts`, `seed-delegation-demo.ts`.
 
 ## Differences from the real Grok Bot
 
@@ -199,6 +331,10 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Team lead / coordinator | a Bot owns unmentioned group work and delegates | yes — Team lead checkbox, `@Name` / `@everyone` |
 | Mid-task redirect / Stop now | new user message takes priority; “Stop now” cancels | yes |
 | Create a focused Bot | existing Bots can spawn a specialist | yes — `create_agent` |
+| Hierarchical delegation | leader hands work to specialists | yes — `delegate_task`: parallel spawn/await, isolated context, structured result, persisted **tree** |
+| Roles / tool scoping | per-bot permissions | yes — first-class **tool policies** (Full/Research/Coding/Browser-only/Review-only/Custom), enforced server-side |
+| Anti-detect browser | hardened Chrome | Chromium + JS stealth **or** engine-level **Camoufox** (per-agent) |
+| Scheduled repo review | Automations | optional **Code Guardian** (schedule + push-to-main webhook; suggests, never auto-merges) |
 | Teach-a-task (record demo) | optional, up to 10 minutes | yes — Profile / rail **Teach a task** takes over the agent computer, captures key frames, and saves a skill |
 | Connectors / Plugins / MCP | yes | yes — sidebar **Plugins** (MCP stdio or webhook); agents call `call_plugin` |
 | Chat attachments, threads, reactions | yes | attachments + emoji reactions; hierarchical agent threads (not Slack-style reply trees) |

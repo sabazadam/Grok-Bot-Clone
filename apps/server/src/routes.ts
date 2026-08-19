@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { z } from "zod";
 import fastifyStatic from "@fastify/static";
 import { FACE_SHAPES, PROVIDER_LABELS, type Provider } from "@grokbot/shared";
+const TOOL_POLICIES = ["full", "research", "coding", "browser_only", "review_only", "custom"] as const;
 import { config, defaultModelFor } from "./config.js";
 import * as store from "./store.js";
 import * as service from "./agents/service.js";
@@ -18,6 +19,8 @@ import { setTakeover } from "./runtime/takeover.js";
 import { MAX_ATTACH_FILES, saveAttachments, uploadsDir } from "./uploads.js";
 import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
 import { forgetPlugin } from "./plugins/runtime.js";
+import { triggerCodeGuardianReview, parsePushPayload } from "./runtime/codeGuardian.js";
+import { timingSafeEqual } from "node:crypto";
 
 const providerEnum = z.enum(["anthropic", "openai", "google", "generic"]);
 
@@ -31,9 +34,31 @@ const agentBody = z.object({
   model: z.string().min(1).max(120),
   collaborationEnabled: z.boolean().default(true),
   stealthBrowsing: z.boolean().default(true),
+  browserEngine: z.enum(["chromium", "camoufox"]).optional(),
   isTeamLead: z.boolean().default(false),
   team: z.string().max(40).default(""),
+  agentKind: z.enum(["standard", "specialist"]).optional(),
+  parentAgentId: z.string().optional(),
+  toolPolicy: z.enum(TOOL_POLICIES).default("full"),
+  toolAllow: z.array(z.string().max(40)).max(20).optional(),
 });
+
+/** A custom tool policy must name at least one tool. Applied to create + update payloads. */
+function customPolicyError(data: { toolPolicy?: string; toolAllow?: string[] }): string | undefined {
+  if (data.toolPolicy === "custom" && !(data.toolAllow && data.toolAllow.length > 0)) {
+    return "custom tool policy requires a non-empty toolAllow list";
+  }
+  return undefined;
+}
+
+/** Constant-time token comparison for the git webhook. */
+export function tokenMatches(provided: string | undefined, secret: string): boolean {
+  if (!provided || !secret) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   fs.mkdirSync(path.join(config.dataDir, "screenshots"), { recursive: true });
@@ -90,6 +115,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       dockerAvailable: await computerManager.dockerAvailable(),
       imageAvailable: await computerManager.imageAvailable(),
       maxRunningComputers: config.maxRunningComputers,
+      browserEngineDefault: config.browserEngineDefault === "camoufox" ? "camoufox" : "chromium",
     };
   });
 
@@ -102,6 +128,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/agents", async (req, reply) => {
     const parsed = agentBody.safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const policyErr = customPolicyError(parsed.data);
+    if (policyErr) return reply.code(400).send({ error: policyErr });
     if (store.rosterCount() >= store.ROSTER_LIMIT) {
       return reply.code(400).send({ error: "roster limit reached (50 bots + groups)" });
     }
@@ -123,6 +151,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const parsed = agentBody.partial().safeParse(req.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.message });
+    const policyErr = customPolicyError(parsed.data);
+    if (policyErr) return reply.code(400).send({ error: policyErr });
     const agent = store.updateAgent(id, parsed.data);
     if (!agent) return reply.code(404).send({ error: "not found" });
     // keep direct conversation title in sync with the agent name
@@ -470,6 +500,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return { ok };
   });
 
+  // ── git webhook → Code Guardian (opt-in, token-guarded) ───────────────
+  // Disabled unless GIT_WEBHOOK_SECRET is set. Point a GitHub push webhook here with the token in
+  // the `x-webhook-token` header (or `?token=`), e.g. via a small proxy. A push to the watched
+  // branch triggers a Code Guardian review; it suggests fixes and never auto-merges.
+  app.post("/api/hooks/git", async (req, reply) => {
+    const secret = config.gitWebhookSecret;
+    if (!secret) return reply.code(404).send({ error: "git webhook disabled (set GIT_WEBHOOK_SECRET)" });
+    const headerToken = req.headers["x-webhook-token"] as string | undefined;
+    const queryToken = (req.query as { token?: string }).token;
+    if (!tokenMatches(headerToken ?? queryToken, secret)) {
+      return reply.code(401).send({ error: "invalid or missing webhook token" });
+    }
+    const { branch, repo } = parsePushPayload(req.body);
+    if (branch && branch !== config.codeGuardianBranch) {
+      return { ok: true, triggered: false, reason: `ignoring push to ${branch} (watching ${config.codeGuardianBranch})` };
+    }
+    const triggered = triggerCodeGuardianReview({ repo, reason: branch ? `push to ${branch}` : "git webhook" });
+    if (!triggered) {
+      return reply.code(409).send({ error: "Code Guardian is not set up — enable CODE_GUARDIAN=1 or seed it" });
+    }
+    return { ok: true, triggered: true };
+  });
+
   // ── approvals & task control ──────────────────────────────────────────
   app.post("/api/approvals/:id/:decision", async (req, reply) => {
     const { id, decision } = req.params as { id: string; decision: string };
@@ -511,6 +564,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.get("/api/search", async (req) => {
     const q = String((req.query as { q?: string }).q ?? "");
     return store.searchMessages(q);
+  });
+
+  // ── delegations (hierarchical multi-agent, read-only for the UI) ──────
+  app.get("/api/delegations", async (req) => {
+    const { agentId, rootMessageId } = req.query as { agentId?: string; rootMessageId?: string };
+    if (rootMessageId) return store.listDelegationsForRoot(rootMessageId);
+    if (agentId) return store.listDelegationsByParent(agentId);
+    // default: everything (small, single-user app)
+    const agents = store.listAgents();
+    return agents.flatMap((a) => store.listDelegationsByParent(a.id));
   });
 
   app.get("/api/plugins", async () => store.listPlugins());

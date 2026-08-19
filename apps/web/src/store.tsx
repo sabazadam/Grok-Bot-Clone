@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useReducer, useRef } from "react";
-import type { Agent, Approval, Conversation, Message, Plugin, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
+import type { Agent, Approval, Conversation, Delegation, Message, Plugin, Routine, ServerEvent, Skill, Task } from "@grokbot/shared";
 import { api, type AppConfig } from "./api";
 
 export interface LiveStep {
@@ -31,6 +31,8 @@ interface State {
   skills: Skill[];
   routines: Routine[];
   plugins: Plugin[];
+  /** delegation records keyed by id (hierarchical multi-agent) */
+  delegations: Record<string, Delegation>;
   lastNotice: Notice | null;
   selectedId: string | null;
 }
@@ -44,6 +46,7 @@ type Action =
       skills: Skill[];
       routines: Routine[];
       plugins: Plugin[];
+      delegations: Delegation[];
     }
   | { type: "select"; id: string | null }
   | { type: "messages_loaded"; convId: string; messages: Message[] }
@@ -73,6 +76,7 @@ function reducer(state: State, action: Action): State {
         skills: action.skills,
         routines: action.routines,
         plugins: action.plugins,
+        delegations: Object.fromEntries(action.delegations.map((d) => [d.id, d])),
       };
     case "agents":
       return { ...state, agents: action.agents };
@@ -170,6 +174,8 @@ function reducer(state: State, action: Action): State {
           return { ...state, plugins: upsert(state.plugins, e.plugin) };
         case "plugin_deleted":
           return { ...state, plugins: state.plugins.filter((p) => p.id !== e.pluginId) };
+        case "delegation_updated":
+          return { ...state, delegations: { ...state.delegations, [e.delegation.id]: e.delegation } };
         case "notice":
           return {
             ...state,
@@ -202,6 +208,7 @@ const initial: State = {
   skills: [],
   routines: [],
   plugins: [],
+  delegations: {},
   lastNotice: null,
   selectedId: null,
 };
@@ -224,15 +231,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     void (async () => {
-      const [config, agents, conversations, skills, routines, plugins] = await Promise.all([
+      const [config, agents, conversations, skills, routines, plugins, delegations] = await Promise.all([
         api.config(),
         api.agents(),
         api.conversations(),
         api.skills().catch(() => [] as Skill[]),
         api.routines().catch(() => [] as Routine[]),
         api.plugins().catch(() => [] as Plugin[]),
+        api.delegations().catch(() => [] as Delegation[]),
       ]);
-      dispatch({ type: "init", config, agents, conversations, skills, routines, plugins });
+      dispatch({ type: "init", config, agents, conversations, skills, routines, plugins, delegations });
     })();
   }, []);
 

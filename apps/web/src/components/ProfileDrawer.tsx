@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Agent, MemoryEntry, Routine, Skill } from "@grokbot/shared";
-import { PROVIDER_LABELS } from "@grokbot/shared";
+import { PROVIDER_LABELS, TOOL_POLICY_LABELS } from "@grokbot/shared";
 import { api } from "../api";
 import { useStore } from "../store";
 import { Avatar, STATUS_LABELS } from "./Avatar";
+import { RoleBadges } from "./Badges";
 
 export function ProfileDrawer({
   agent,
@@ -16,7 +17,8 @@ export function ProfileDrawer({
   onEdit: () => void;
   onTeach: () => void;
 }) {
-  const { refreshAgents, selectConversation } = useStore();
+  const { state, refreshAgents, selectConversation } = useStore();
+  const parent = agent.parentAgentId ? state.agents.find((a) => a.id === agent.parentAgentId) : undefined;
   const [memories, setMemories] = useState<MemoryEntry[]>([]);
   const [skills, setSkills] = useState<(Skill & { enabled: boolean })[]>([]);
   const [routines, setRoutines] = useState<Routine[]>([]);
@@ -51,10 +53,11 @@ export function ProfileDrawer({
       >
         <div className="mb-4 flex items-center gap-3">
           <Avatar agent={agent} size={56} />
-          <div>
+          <div className="min-w-0">
             <h2 className="text-lg font-bold" style={{ color: "var(--text)" }}>{agent.name}</h2>
             <p className="text-sm" style={{ color: "var(--muted)" }}>{agent.roleTitle || "Agent"}</p>
             <p className="text-xs" style={{ color: "var(--muted)" }}>{STATUS_LABELS[agent.status]}</p>
+            <div className="mt-1"><RoleBadges agent={agent} /></div>
           </div>
         </div>
 
@@ -75,6 +78,26 @@ export function ProfileDrawer({
             <span style={{ color: "var(--muted)" }}>Stealth browsing</span>
             <span style={{ color: "var(--text)" }}>{agent.stealthBrowsing ? "on (anti-fingerprint)" : "off"}</span>
           </div>
+          <div className="mb-1 flex justify-between">
+            <span style={{ color: "var(--muted)" }}>Browser engine</span>
+            <span style={{ color: "var(--text)" }}>{agent.browserEngine === "camoufox" ? "Camoufox" : "Chromium"}</span>
+          </div>
+          <div className="mb-1 flex justify-between">
+            <span style={{ color: "var(--muted)" }}>Tool policy</span>
+            <span style={{ color: "var(--text)" }}>
+              {TOOL_POLICY_LABELS[agent.toolPolicy]}
+              {agent.toolPolicy === "custom" && agent.toolAllow?.length ? ` (${agent.toolAllow.join(", ")})` : ""}
+            </span>
+          </div>
+          {(agent.agentKind === "specialist" || parent) && (
+            <div className="mb-1 flex justify-between">
+              <span style={{ color: "var(--muted)" }}>Spawned by</span>
+              <span style={{ color: "var(--text)" }}>
+                {parent ? parent.name : "a team lead"}
+                {agent.agentKind === "specialist" ? " · idles after 10m" : ""}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between">
             <span style={{ color: "var(--muted)" }}>Computer</span>
             <span style={{ color: "var(--text)" }}>

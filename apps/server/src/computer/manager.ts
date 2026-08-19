@@ -9,21 +9,16 @@
  */
 import Docker from "dockerode";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { nanoid } from "nanoid";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ComputerAction, ComputerInfo } from "@grokbot/shared";
 import { config } from "../config.js";
+import type { ActionResponse, BrowserSyncOptions, ComputerBackend, ExecResult } from "./backend.js";
 
-export interface ExecResult {
-  ok: boolean;
-  exitCode: number;
-  output: string;
-}
-
-export interface ActionResponse {
-  ok: boolean;
-  error?: string;
-  cursor?: { x: number; y: number };
-}
+export type { ExecResult, ActionResponse } from "./backend.js";
 
 function parseMemory(s: string): number {
   const m = /^(\d+(?:\.\d+)?)([kmg]?)b?$/i.exec(s.trim());
@@ -36,7 +31,8 @@ function parseMemory(s: string): number {
 const CONTAINER_PREFIX = "agentos-";
 const VOLUME_SUFFIX = "-home";
 
-export class ComputerManager {
+/** The Docker-backed implementation of ComputerBackend (one container per agent). */
+export class ComputerManager implements ComputerBackend {
   private docker: Docker;
   /** agentId -> last actuator interaction, for idle stop */
   private lastUsed = new Map<string, number>();
@@ -299,16 +295,15 @@ export class ComputerManager {
    * agent's stealth toggle / UA / timezone / locale take effect without recreating
    * the container.
    */
-  async syncBrowserConfig(
-    agentId: string,
-    opts: { stealth: boolean; userAgent: string; timezone: string; locale: string },
-  ): Promise<void> {
+  async syncBrowserConfig(agentId: string, opts: BrowserSyncOptions): Promise<void> {
     const esc = (s: string) => s.replace(/'/g, "'\\''");
     const content = [
       `STEALTH=${opts.stealth ? "1" : "0"}`,
+      `ENGINE='${esc(opts.engine ?? "chromium")}'`,
       `USER_AGENT='${esc(opts.userAgent)}'`,
       `TZ='${esc(opts.timezone)}'`,
       `LOCALE='${esc(opts.locale)}'`,
+      `CAMOU_CONFIG='${esc(opts.camouConfig ?? "")}'`,
     ].join("\n");
     const cmd = `mkdir -p ~/.config/grokbot && cat > ~/.config/grokbot/browser.env <<'GBEOF'\n${content}\nGBEOF`;
     try {
@@ -341,6 +336,31 @@ export class ComputerManager {
     });
   }
 
+  /**
+   * Copy a file OUT of the agent's container to the host and return its bytes. Used by send_image so
+   * an agent can share a file from its computer into the chat. `~` expands to /home/agent.
+   */
+  async copyFileOut(agentId: string, containerPath: string): Promise<{ buffer: Buffer; name: string }> {
+    const expanded = containerPath.replace(/^~(?=\/|$)/, "/home/agent");
+    const name = expanded.split("/").pop() || "file";
+    const tmp = path.join(os.tmpdir(), `gb_out_${nanoid(8)}_${name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`);
+    const src = `${this.containerName(agentId)}:${expanded}`;
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("docker", ["cp", src, tmp]);
+      child.on("error", reject);
+      child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker cp failed (${code})`))));
+    });
+    try {
+      return { buffer: fs.readFileSync(tmp), name };
+    } finally {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
   /** Kill the in-container exec/action that Stop now interrupted. */
   async abortExec(agentId: string): Promise<void> {
     try {
@@ -351,13 +371,18 @@ export class ComputerManager {
     }
   }
 
-  /** Stop computers idle for longer than the configured threshold. Returns stopped agent ids. */
-  async stopIdle(activeAgentIds: Set<string>): Promise<string[]> {
-    if (config.computerIdleStopMinutes <= 0) return [];
-    const cutoff = Date.now() - config.computerIdleStopMinutes * 60_000;
+  /**
+   * Stop computers idle longer than their threshold. Returns stopped agent ids.
+   * `minutesFor` lets the caller pick a per-agent idle window (e.g. spawned specialists get a
+   * shorter window than standard agents); a value <= 0 means "never stop this agent".
+   */
+  async stopIdle(activeAgentIds: Set<string>, minutesFor?: (agentId: string) => number): Promise<string[]> {
+    const now = Date.now();
     const stopped: string[] = [];
     for (const [agentId, ts] of this.lastUsed) {
-      if (ts < cutoff && !activeAgentIds.has(agentId)) {
+      const minutes = minutesFor ? minutesFor(agentId) : config.computerIdleStopMinutes;
+      if (minutes <= 0) continue;
+      if (ts < now - minutes * 60_000 && !activeAgentIds.has(agentId)) {
         try {
           await this.stop(agentId);
           this.lastUsed.delete(agentId);

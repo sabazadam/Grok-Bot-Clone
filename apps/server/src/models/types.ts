@@ -1,10 +1,25 @@
 /** Provider-agnostic model adapter contract. */
-import type { ComputerAction, MemoryKind, Resolution } from "@grokbot/shared";
+import type { ComputerAction, MemoryKind, Resolution, ToolPolicyName } from "@grokbot/shared";
+
+/** One sub-task in a delegate_task call. */
+export interface DelegateTaskSpec {
+  /** delegate to an existing teammate by name… */
+  agentName?: string;
+  /** …or spawn a new permanent specialist */
+  spawn?: { name: string; roleTitle?: string; instructions?: string; toolPolicy?: ToolPolicyName };
+  goal: string;
+  context?: string;
+  role?: "leaf" | "orchestrator";
+  allowedTools?: string[];
+  timeoutSec?: number;
+  maxSteps?: number;
+}
 
 export type ToolInvocation =
   | { id: string; tool: "computer"; action: ComputerAction }
   | { id: string; tool: "bash"; command: string }
   | { id: string; tool: "send_message"; text: string }
+  | { id: string; tool: "send_image"; path?: string; caption?: string }
   | { id: string; tool: "send_message_to_agent"; toAgentName: string; text: string }
   | { id: string; tool: "update_memory"; memoryKind: MemoryKind; content: string }
   | { id: string; tool: "request_approval"; description: string; reason: string }
@@ -12,7 +27,8 @@ export type ToolInvocation =
   | { id: string; tool: "create_agent"; name: string; roleTitle: string; instructions: string; isTeamLead?: boolean }
   | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes?: number; schedule?: string; skillName?: string }
   | { id: string; tool: "task_complete"; summary: string }
-  | { id: string; tool: "call_plugin"; pluginId: string; toolName: string; arguments: Record<string, unknown> };
+  | { id: string; tool: "call_plugin"; pluginId: string; toolName: string; arguments: Record<string, unknown> }
+  | { id: string; tool: "delegate_task"; tasks: DelegateTaskSpec[]; concurrency?: number };
 
 export interface ToolOutcome {
   id: string;
@@ -44,6 +60,8 @@ export interface AdapterInit {
   /** for OpenAI-compatible endpoints (xAI etc.) */
   baseUrl?: string;
   collaborationEnabled: boolean;
+  /** Resolved set of tool names this agent may use (policy/role enforcement at the schema layer). */
+  allowedTools: string[];
   /** injectable for unit tests */
   fetchFn?: typeof fetch;
 }
@@ -105,6 +123,8 @@ export function describeInvocation(inv: ToolInvocation): string {
       return `Scheduled “${inv.name}”`;
     case "send_message":
       return "Sent a message";
+    case "send_image":
+      return inv.path ? `Sent image ${inv.path.split("/").pop()}` : "Sent a screenshot to chat";
     case "send_message_to_agent":
       return `Messaged @${inv.toAgentName}`;
     case "update_memory":
@@ -115,5 +135,12 @@ export function describeInvocation(inv: ToolInvocation): string {
       return "Finished the task";
     case "call_plugin":
       return `Called plugin ${inv.pluginId}.${inv.toolName}`;
+    case "delegate_task": {
+      const names = inv.tasks
+        .map((t) => t.agentName || t.spawn?.name)
+        .filter(Boolean)
+        .join(", ");
+      return `Delegated ${inv.tasks.length} task(s)${names ? ` to ${names}` : ""}`;
+    }
   }
 }

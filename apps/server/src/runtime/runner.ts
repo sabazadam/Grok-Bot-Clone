@@ -15,7 +15,7 @@ import { createAdapter, describeInvocation, type AgentDecision, type ToolOutcome
 import { buildSystemPrompt, buildTaskPrompt } from "./prompt.js";
 import { evaluateInvocation, describeExactAction } from "./safety.js";
 import { requestApproval } from "./approvals.js";
-import { registerTask, unregisterTask } from "./cancel.js";
+import { registerTask, unregisterTask, cancelTask } from "./cancel.js";
 import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
@@ -29,6 +29,12 @@ export interface RunTaskOptions {
   rootMessageId: string;
   triggeredBy: { kind: "user" } | { kind: "agent"; agentId: string };
   attachments?: Attachment[];
+  /**
+   * Set when this task is a delegated sub-task. The runner then returns its result structurally
+   * (records it on the delegation row) instead of posting the final reply into chat — this keeps the
+   * parent's context clean.
+   */
+  delegation?: { id: string; maxSteps?: number; timeoutSec?: number; depth?: number };
 }
 
 function postAgentText(agent: Agent, conversationId: string, text: string, relatedConversationId?: string): void {
@@ -53,6 +59,22 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   service.setStatus(agent.id, "working");
   store.updateTask(task.id, { status: "running" });
   broadcast({ type: "task_updated", task: store.getTask(task.id)! });
+
+  const isDelegated = !!opts.delegation;
+  const maxSteps = opts.delegation?.maxSteps ?? config.maxTaskSteps;
+  let timedOut = false;
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+  if (opts.delegation) {
+    store.updateDelegation(opts.delegation.id, { childTaskId: task.id });
+    const d = store.getDelegation(opts.delegation.id);
+    if (d) broadcast({ type: "delegation_updated", delegation: d });
+    if (opts.delegation.timeoutSec && opts.delegation.timeoutSec > 0) {
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        cancelTask(task.id);
+      }, opts.delegation.timeoutSec * 1000);
+    }
+  }
 
   let finalText = "";
   let failed = false;
@@ -126,8 +148,8 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         }
 
         stepIndex += 1;
-        if (stepIndex > config.maxTaskSteps) {
-          finalText = `I hit the step limit (${config.maxTaskSteps}) before finishing. Progress so far is saved on my computer — tell me to continue if you want me to keep going.`;
+        if (stepIndex > maxSteps) {
+          finalText = `I hit the step limit (${maxSteps}) before finishing. Progress so far is saved on my computer — tell me to continue if you want me to keep going.`;
           store.updateTask(task.id, { status: "done", finishedAt: Date.now(), resultSummary: "step limit reached" });
           break loop;
         }
@@ -210,7 +232,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
 
         // ── execute ──
         const { outcome, screenshotUrl } = await executeInvocation(
-          { agent, taskId: task.id, conversationId: conversation.id, rootMessageId: opts.rootMessageId, signal },
+          { agent, taskId: task.id, conversationId: conversation.id, rootMessageId: opts.rootMessageId, signal, depth: opts.delegation?.depth ?? 0 },
           inv,
           stepIndex,
         );
@@ -247,11 +269,40 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     broadcast({ type: "message", message: msg });
     store.updateTask(task.id, { status: "failed", finishedAt: Date.now(), resultSummary: (err as Error).message.slice(0, 500) });
   } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
     unregisterTask(task.id);
   }
 
-  // ── deliver the final reply (ACK / empty = no chat message) ──
   const isAck = isSilentReply(finalText);
+
+  // ── delegated sub-task: record the structured result on the delegation row; do NOT pollute the
+  //    parent's chat. We DO post the result into the private lead↔specialist thread (conversation is
+  //    that thread here) so the handoff has visible history. ──
+  if (isDelegated && opts.delegation) {
+    const t = store.getTask(task.id);
+    if (!failed && finalText && !isAck) postAgentText(agent, conversation.id, finalText);
+    let status: "done" | "failed" | "timeout" = "done";
+    if (timedOut) status = "timeout";
+    else if (failed || t?.status === "failed") status = "failed";
+    else if (t?.status === "cancelled") status = "timeout";
+    const summary = failed
+      ? finalText || "sub-task failed"
+      : isAck
+        ? "(no summary needed)"
+        : finalText || t?.resultSummary || "(no summary)";
+    store.updateDelegation(opts.delegation.id, {
+      status,
+      resultSummary: summary.slice(0, 2000),
+      stepCount: t?.stepCount ?? 0,
+      finishedAt: Date.now(),
+    });
+    const d = store.getDelegation(opts.delegation.id);
+    if (d) broadcast({ type: "delegation_updated", delegation: d });
+    service.setStatus(agent.id, "idle");
+    return;
+  }
+
+  // ── deliver the final reply (ACK / empty = no chat message) ──
   if (!failed && finalText && !isAck) {
     postAgentText(agent, conversation.id, finalText);
   }

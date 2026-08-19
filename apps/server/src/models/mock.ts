@@ -52,6 +52,10 @@ export class MockAdapter implements ModelAdapter {
         this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
       } else if ((m = line.match(/^say:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "send_message", text: m[1]! });
+      } else if ((m = line.match(/^send image(?::)?\s*(.+)$/i))) {
+        this.queue.push({ id: this.id(), tool: "send_image", path: m[1]!.trim() });
+      } else if (/^send (the )?screenshot to chat$/i.test(line)) {
+        this.queue.push({ id: this.id(), tool: "send_image" });
       } else if ((m = line.match(/^save skill ([^:]+):\s*(.+)$/i))) {
         this.queue.push({
           id: this.id(),
@@ -67,6 +71,27 @@ export class MockAdapter implements ModelAdapter {
           name: m[1]!,
           roleTitle: m[2]!.trim(),
           instructions: m[3]!,
+        });
+      } else if ((m = line.match(/^delegate parallel:\s*(.+)$/i))) {
+        // "delegate parallel: Researcher=dig into X; Coder=write Y"
+        const tasks = m[1]!
+          .split(";")
+          .map((s) => s.trim())
+          .filter(Boolean)
+          .map((pair) => {
+            const eq = pair.indexOf("=");
+            const agentName = (eq >= 0 ? pair.slice(0, eq) : pair).trim();
+            const goal = (eq >= 0 ? pair.slice(eq + 1) : "help with the task").trim();
+            return { agentName, goal };
+          });
+        this.queue.push({ id: this.id(), tool: "delegate_task", tasks, concurrency: 2 });
+      } else if ((m = line.match(/^delegate to (\S+):\s*(.+)$/i))) {
+        this.queue.push({ id: this.id(), tool: "delegate_task", tasks: [{ agentName: m[1]!, goal: m[2]! }] });
+      } else if ((m = line.match(/^spawn (\S+) as ([^:]+):\s*(.+)$/i))) {
+        this.queue.push({
+          id: this.id(),
+          tool: "delegate_task",
+          tasks: [{ spawn: { name: m[1]!, roleTitle: m[2]!.trim() }, goal: m[3]! }],
         });
       } else if ((m = line.match(/^schedule (.+):\s*(.+)$/i))) {
         this.queue.push({

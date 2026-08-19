@@ -2,6 +2,7 @@ import type {
   Agent,
   Approval,
   Conversation,
+  Delegation,
   MemoryEntry,
   Message,
   Plugin,
@@ -37,6 +38,7 @@ export interface AppConfig {
   dockerAvailable: boolean;
   imageAvailable: boolean;
   maxRunningComputers: number;
+  browserEngineDefault?: "chromium" | "camoufox";
 }
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
@@ -117,4 +119,11 @@ export const api = {
   approve: (approvalId: string) => req<Approval>(`/api/approvals/${approvalId}/approve`, { method: "POST" }),
   reject: (approvalId: string) => req<Approval>(`/api/approvals/${approvalId}/reject`, { method: "POST" }),
   cancelTask: (taskId: string) => req(`/api/tasks/${taskId}/cancel`, { method: "POST" }),
+  delegations: (opts?: { agentId?: string; rootMessageId?: string }) => {
+    const q = new URLSearchParams();
+    if (opts?.agentId) q.set("agentId", opts.agentId);
+    if (opts?.rootMessageId) q.set("rootMessageId", opts.rootMessageId);
+    const qs = q.toString();
+    return req<Delegation[]>(`/api/delegations${qs ? `?${qs}` : ""}`);
+  },
 };

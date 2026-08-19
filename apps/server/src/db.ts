@@ -16,9 +16,14 @@ CREATE TABLE IF NOT EXISTS agents (
   model TEXT NOT NULL,
   collaboration_enabled INTEGER NOT NULL DEFAULT 1,
   stealth_browsing INTEGER NOT NULL DEFAULT 1,
+  browser_engine TEXT NOT NULL DEFAULT 'chromium',
   hidden INTEGER NOT NULL DEFAULT 0,
   is_team_lead INTEGER NOT NULL DEFAULT 0,
   team TEXT NOT NULL DEFAULT '',
+  agent_kind TEXT NOT NULL DEFAULT 'standard',
+  parent_agent_id TEXT,
+  tool_policy TEXT NOT NULL DEFAULT 'full',
+  tool_allow TEXT,
   status TEXT NOT NULL DEFAULT 'off',
   created_at INTEGER NOT NULL
 );
@@ -126,6 +131,24 @@ CREATE TABLE IF NOT EXISTS plugins (
   url TEXT,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS delegations (
+  id TEXT PRIMARY KEY,
+  root_message_id TEXT,
+  parent_agent_id TEXT NOT NULL,
+  child_agent_id TEXT NOT NULL,
+  conversation_id TEXT,
+  child_task_id TEXT,
+  goal TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'leaf',
+  depth INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'running',
+  result_summary TEXT,
+  step_count INTEGER,
+  created_at INTEGER NOT NULL,
+  finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_deleg_parent ON delegations(parent_agent_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_deleg_root ON delegations(root_message_id);
 `;
 
 let db: Database.Database | null = null;
@@ -159,6 +182,21 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("avatar_shape")) {
     d.exec(`ALTER TABLE agents ADD COLUMN avatar_shape TEXT`);
+  }
+  if (!cols.has("agent_kind")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN agent_kind TEXT NOT NULL DEFAULT 'standard'`);
+  }
+  if (!cols.has("parent_agent_id")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN parent_agent_id TEXT`);
+  }
+  if (!cols.has("tool_policy")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN tool_policy TEXT NOT NULL DEFAULT 'full'`);
+  }
+  if (!cols.has("tool_allow")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN tool_allow TEXT`);
+  }
+  if (!cols.has("browser_engine")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN browser_engine TEXT NOT NULL DEFAULT 'chromium'`);
   }
   const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
   if (routineCols.size > 0 && !routineCols.has("schedule_json")) {

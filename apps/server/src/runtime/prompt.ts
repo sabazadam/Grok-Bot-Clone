@@ -1,8 +1,9 @@
 /** Assembles an agent's system prompt: identity, role, environment, memory, teammates, policies. */
 import type { Agent, Conversation } from "@grokbot/shared";
-import { parseResolution } from "@grokbot/shared";
+import { parseResolution, TOOL_POLICY_LABELS } from "@grokbot/shared";
 import { config } from "../config.js";
 import * as store from "../store.js";
+import { describeAllowedTools, resolveAllowedTools } from "./toolPolicy.js";
 
 export interface TaskPromptOptions {
   agentId: string;
@@ -20,11 +21,13 @@ export function buildSystemPrompt(agent: Agent, extras?: string): string {
     `You are ${agent.name}${agent.roleTitle ? `, the ${agent.roleTitle}` : ""} — a persistent AI teammate with YOUR OWN dedicated computer. You finish jobs end-to-end on that sandbox and only come back when something needs the user: a finished result, a blocker only they can resolve, or an approval.`,
   );
 
+  const browserName = agent.browserEngine === "camoufox" ? "Camoufox (an anti-detect, Firefox-based browser)" : "Chromium";
   sections.push(
     `## Your computer
 - Debian Linux desktop, ${width}x${height}, openbox window manager, taskbar at the bottom (launchers: web browser, terminal, file manager, text editor; open windows appear there too).
-- Chromium is the browser; from a shell use \`/usr/local/bin/browser <url>\` (already wrapped with the right flags${agent.stealthBrowsing ? ", including anti-fingerprint / stealth hardening so sites are less likely to flag you as a bot" : ""}). GUI apps need \`DISPLAY=:0\`, e.g. \`DISPLAY=:0 nohup xterm &\`.
+- ${browserName} is the browser; from a shell use \`/usr/local/bin/browser <url>\` (already wrapped with the right flags${agent.stealthBrowsing || agent.browserEngine === "camoufox" ? ", including anti-fingerprint / stealth hardening so sites are less likely to flag you as a bot" : ""}). GUI apps need \`DISPLAY=:0\`, e.g. \`DISPLAY=:0 nohup xterm &\`.
 - You are user "agent" (non-root, sudo not available). Your home is /home/agent. Keep durable project files in /home/agent/workspace.
+- Clipboard works: copy with \`printf '%s' "text" | xclip -selection clipboard\` then paste with Ctrl+V (often more reliable than typing long/complex text). Windows can be managed with \`wmctrl\`.
 - The machine and its files persist between tasks — earlier work, logins, and browser sessions are still there.`,
   );
 
@@ -40,6 +43,7 @@ Your computer is a sandbox. Clicks, typing, browsing, and shell commands are NOT
 Do not narrate routine actions, do not send a status update after every step, and do not message about work that is unrelated to the current task.
 Message only when it is necessary AND related to the task:
 - send_message — a blocker, a question only the user can answer, a takeover request (password / 2FA / CAPTCHA), or a milestone they explicitly asked to be told about.
+- send_image — share an image the user asked for, as a chat attachment they can see. Give a \`path\` to a file on your computer (e.g. \`~/workspace/pic.jpg\`), or omit \`path\` to send the CURRENT screen. To share a picture from the web (e.g. a Google Images result), download it first with bash (\`curl -L -o ~/workspace/pic.jpg "<image-url>"\`) and then send that path. When the user asks you to "send"/"show" an image, use this — don't just describe it.
 - request_approval — consequential external actions (send, purchase, delete, publish, submit).
 - send_message_to_agent — a real handoff that needs another specialist. Not for broadcasting status.
 - save_skill — after a process works, save how to do it so anyone can run it with /Name.
@@ -51,9 +55,28 @@ Never use send_message (or a teammate DM) to say that you clicked, typed, ran a 
   );
 
   if (agent.isTeamLead) {
+    const canDelegate = resolveAllowedTools(agent).has("delegate_task");
     sections.push(
       `## Team lead
-You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.`,
+You coordinate. When the user writes to a group without @mentioning someone, you own the request: do it yourself or hand it to a specialist (send_message_to_agent or @Name in your final reply). Create a focused teammate with create_agent only when a job needs a durable owner — ask before making several. Do not dump sandbox status into the group.${
+        canDelegate
+          ? `
+For complex requests, prefer **delegate_task**: hand each sub-goal to a specialist (reuse an existing teammate by name when one fits; otherwise spawn a new one). Give each only the goal + the context it needs — it works in its own thread and returns a concise structured result, so your context stays clean. Run independent sub-tasks in parallel with \`concurrency\`. Reuse specialists across requests instead of spawning duplicates.`
+          : ""
+      }`,
+    );
+  }
+
+  // Role & tool policy (belt-and-suspenders: schema filtering + host-side enforcement also apply).
+  if (agent.toolPolicy && agent.toolPolicy !== "full") {
+    const allowed = resolveAllowedTools(agent);
+    const notes: string[] = [];
+    if (!allowed.has("computer")) notes.push("You do NOT have the computer (GUI) tool — work via the other tools you have.");
+    if (!allowed.has("bash")) notes.push("You do NOT have the bash/shell tool.");
+    sections.push(
+      `## Your role & tools
+Tool policy: ${TOOL_POLICY_LABELS[agent.toolPolicy]}. You may use: ${describeAllowedTools(agent)} (plus reporting tools: send_message, request_approval, task_complete, update_memory).
+Attempts to use a tool outside this policy will be refused.${notes.length ? "\n" + notes.join("\n") : ""}`,
     );
   }
 

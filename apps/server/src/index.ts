@@ -9,6 +9,7 @@ import * as store from "./store.js";
 import * as service from "./agents/service.js";
 import { broadcast } from "./bus.js";
 import { startScheduler } from "./runtime/scheduler.js";
+import { ensureCodeGuardian } from "./runtime/codeGuardian.js";
 
 async function main() {
   ensureDataDirs();
@@ -24,6 +25,15 @@ async function main() {
   for (const agent of store.assignMissingFaceShapes()) {
     broadcast({ type: "agent_updated", agent });
   }
+  // Optional repo-health reviewer (Cursor-Automations style). Off unless CODE_GUARDIAN=1, or a git
+  // webhook secret is configured (so pushes have an agent to trigger).
+  if (config.codeGuardianEnabled || config.gitWebhookSecret) {
+    try {
+      ensureCodeGuardian();
+    } catch (err) {
+      console.error("[code-guardian] setup failed:", err);
+    }
+  }
   void computerManager
     .reapOrphans(store.listAgents().map((a) => a.id))
     .then(() => computerManager.hydrateLastUsed())
@@ -38,18 +48,24 @@ async function main() {
   await registerRoutes(app);
   startScheduler();
 
-  // Idle computer auto-stop sweep
-  if (config.computerIdleStopMinutes > 0) {
+  // Idle computer auto-stop sweep. Spawned specialists are permanent (history/files persist) but
+  // their computer is reclaimed on a shorter idle window to free RAM.
+  if (config.computerIdleStopMinutes > 0 || config.specialistIdleStopMinutes > 0) {
     setInterval(async () => {
       const active = new Set(
         store
           .listAgents()
-          .filter((a) => a.status === "working" || a.status === "waiting_approval")
+          .filter((a) => a.status === "working" || a.status === "waiting_approval" || a.status === "starting")
           .map((a) => a.id),
       );
-      const stopped = await computerManager.stopIdle(active);
+      const stopped = await computerManager.stopIdle(active, (agentId) => {
+        const a = store.getAgent(agentId);
+        return a?.agentKind === "specialist" ? config.specialistIdleStopMinutes : config.computerIdleStopMinutes;
+      });
       for (const agentId of stopped) {
         store.setAgentStatus(agentId, "off");
+        const a = store.getAgent(agentId);
+        if (a) broadcast({ type: "agent_updated", agent: await service.agentWithComputer(a) });
       }
     }, 60_000).unref();
   }

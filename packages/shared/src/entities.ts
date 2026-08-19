@@ -1,6 +1,46 @@
 /** Persistent domain entities shared between server and web UI. */
 import type { RoutineSchedule } from "./schedule.js";
 
+/** Status of a delegated sub-task. */
+export type DelegationStatus = "running" | "done" | "failed" | "timeout" | "skipped_budget";
+
+/** The role a delegated sub-agent plays for the task. Leaf agents cannot sub-delegate. */
+export type DelegationRole = "leaf" | "orchestrator";
+
+/**
+ * A unit of hierarchical delegation: a parent (Team Lead / orchestrator) hands a goal to a child
+ * sub-agent, which runs in its own thread with isolated context and returns a structured result.
+ * Persisted so the UI can render the "Leader → Research Agent → Coding Agent" tree.
+ */
+export interface Delegation {
+  id: string;
+  /** the user message that ultimately triggered this chain (turn-budget key) */
+  rootMessageId?: string;
+  parentAgentId: string;
+  childAgentId: string;
+  /** the agent_dm thread the handoff lives in */
+  conversationId?: string;
+  childTaskId?: string;
+  goal: string;
+  role: DelegationRole;
+  depth: number;
+  status: DelegationStatus;
+  resultSummary?: string;
+  stepCount?: number;
+  createdAt: number;
+  finishedAt?: number;
+}
+
+/** Structured result handed back to the parent for a single delegated task. */
+export interface DelegateResult {
+  delegationId: string;
+  childAgentId: string;
+  childAgentName: string;
+  status: DelegationStatus;
+  summary: string;
+  steps: number;
+}
+
 export type Provider = "anthropic" | "openai" | "google" | "generic";
 
 export const PROVIDER_LABELS: Record<Provider, string> = {
@@ -39,6 +79,67 @@ export const FACE_COLORS = [
 
 export type AgentStatus = "off" | "starting" | "idle" | "working" | "waiting_approval" | "error";
 
+/**
+ * Which browser binary the agent's computer uses.
+ *  - "chromium" — the bundled Chromium + JS stealth extension (default).
+ *  - "camoufox" — a Firefox-based, engine-level anti-detect browser for hard sites.
+ */
+export type BrowserEngine = "chromium" | "camoufox";
+
+export const BROWSER_ENGINE_LABELS: Record<BrowserEngine, string> = {
+  chromium: "Chromium (default)",
+  camoufox: "Camoufox (recommended for hard sites)",
+};
+
+/**
+ * How an agent came to exist / how it is managed.
+ *  - "standard"   — a normal teammate you created.
+ *  - "specialist" — a permanent teammate spawned by a Team Lead via delegation. Kept in the roster
+ *                   with full conversation history; only its computer is reclaimed after idle.
+ */
+export type AgentKind = "standard" | "specialist";
+
+/**
+ * Tool-scoping preset. Roles are first-class so a Researcher can't accidentally run dangerous shell
+ * commands and a reviewer doesn't need full browser stealth. `custom` uses an explicit allow-list.
+ */
+export type ToolPolicyName = "full" | "research" | "coding" | "browser_only" | "review_only" | "custom";
+
+export const TOOL_POLICY_LABELS: Record<ToolPolicyName, string> = {
+  full: "Full access",
+  research: "Research (browser + read)",
+  coding: "Coding (shell + files)",
+  browser_only: "Browser only",
+  review_only: "Review only (read + report)",
+  custom: "Custom allow-list",
+};
+
+/**
+ * Tools that can be scoped by a policy. Reporting/safety/completion tools
+ * (send_message, request_approval, task_complete, update_memory) are ALWAYS allowed and are
+ * intentionally not listed here.
+ */
+export const GATEABLE_TOOLS = [
+  "computer",
+  "bash",
+  "send_message_to_agent",
+  "create_agent",
+  "create_routine",
+  "save_skill",
+  "call_plugin",
+  "delegate_task",
+] as const;
+export type GateableTool = (typeof GATEABLE_TOOLS)[number];
+
+/** Tools every agent may always use, regardless of policy. */
+export const ALWAYS_ALLOWED_TOOLS = [
+  "send_message",
+  "send_image",
+  "request_approval",
+  "task_complete",
+  "update_memory",
+] as const;
+
 export interface Agent {
   id: string;
   name: string;
@@ -54,6 +155,8 @@ export interface Agent {
   collaborationEnabled: boolean;
   /** Use the anti-detection / fingerprint-hardened browser for this agent's computer. */
   stealthBrowsing: boolean;
+  /** Which browser engine this agent's computer uses (Chromium default, or Camoufox for hard sites). */
+  browserEngine: BrowserEngine;
   /** Hidden from the sidebar (archived) — conversation and computer are kept. */
   hidden: boolean;
   /**
@@ -63,6 +166,14 @@ export interface Agent {
   isTeamLead: boolean;
   /** Sidebar folder (Leaders / Social Media / Unassigned, etc.). */
   team: string;
+  /** How this agent is managed. "specialist" = spawned by a lead via delegation (permanent). */
+  agentKind: AgentKind;
+  /** The lead/agent that spawned this one (delegation hierarchy). */
+  parentAgentId?: string;
+  /** Tool-scoping preset applied to this agent's tools. */
+  toolPolicy: ToolPolicyName;
+  /** Explicit allow-list of gateable tools; only used when toolPolicy === "custom". */
+  toolAllow?: string[];
   status: AgentStatus;
   /** Host ports of this agent's computer, when provisioned */
   computer?: ComputerInfo;
