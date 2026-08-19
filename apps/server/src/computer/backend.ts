@@ -47,6 +47,7 @@ export interface ComputerBackend {
   abortExec(agentId: string): Promise<void>;
   syncBrowserConfig(agentId: string, opts: BrowserSyncOptions): Promise<void>;
   copyToWorkspace(agentId: string, hostFile: string, destName: string): Promise<void>;
+  copyFileOut(agentId: string, containerPath: string): Promise<{ buffer: Buffer; name: string }>;
   // fleet management
   runningCount(): Promise<number>;
   runningAgentIds(): Promise<string[]>;

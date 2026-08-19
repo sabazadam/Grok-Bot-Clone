@@ -9,6 +9,10 @@
  */
 import Docker from "dockerode";
 import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { nanoid } from "nanoid";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { ComputerAction, ComputerInfo } from "@grokbot/shared";
 import { config } from "../config.js";
@@ -330,6 +334,31 @@ export class ComputerManager implements ComputerBackend {
       child.on("error", reject);
       child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker cp failed (${code})`))));
     });
+  }
+
+  /**
+   * Copy a file OUT of the agent's container to the host and return its bytes. Used by send_image so
+   * an agent can share a file from its computer into the chat. `~` expands to /home/agent.
+   */
+  async copyFileOut(agentId: string, containerPath: string): Promise<{ buffer: Buffer; name: string }> {
+    const expanded = containerPath.replace(/^~(?=\/|$)/, "/home/agent");
+    const name = expanded.split("/").pop() || "file";
+    const tmp = path.join(os.tmpdir(), `gb_out_${nanoid(8)}_${name.replace(/[^a-zA-Z0-9._-]+/g, "_")}`);
+    const src = `${this.containerName(agentId)}:${expanded}`;
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("docker", ["cp", src, tmp]);
+      child.on("error", reject);
+      child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`docker cp failed (${code})`))));
+    });
+    try {
+      return { buffer: fs.readFileSync(tmp), name };
+    } finally {
+      try {
+        fs.unlinkSync(tmp);
+      } catch {
+        /* ignore */
+      }
+    }
   }
 
   /** Kill the in-container exec/action that Stop now interrupted. */

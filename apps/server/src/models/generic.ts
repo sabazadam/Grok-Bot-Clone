@@ -29,6 +29,7 @@ const TOOL_PROTOCOL_LINES: Record<string, string> = {
   create_agent: `{"thought":"...","create_agent":{"name":"...","roleTitle":"...","instructions":"...","isTeamLead":false}}`,
   create_routine: `{"thought":"...","create_routine":{"name":"...","prompt":"...","schedule":"every morning","skillName":"optional"}}`,
   send_message: `{"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now`,
+  send_image: `{"thought":"...","send_image":{"path":"~/workspace/pic.jpg","caption":"..."}}  // share an image in chat; omit "path" to send the current screen`,
   send_message_to_agent: `{"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}`,
   delegate_task: `{"thought":"...","delegate_task":{"tasks":[{"agentName":"Name","goal":"...","context":"..."}],"concurrency":2}}   // or {"spawn":{"name":"Name","roleTitle":"Role","toolPolicy":"research"},"goal":"..."}`,
 };
@@ -38,7 +39,7 @@ function buildProtocol(allowed: Set<string>): string {
   const lines: string[] = [];
   const canComputer = allowed.has("computer");
   if (canComputer) lines.push(COMPUTER_PROTOCOL_LINES);
-  for (const name of ["bash", "update_memory", "request_approval", "save_skill", "create_agent", "create_routine", "send_message", "send_message_to_agent", "delegate_task"]) {
+  for (const name of ["bash", "update_memory", "request_approval", "save_skill", "create_agent", "create_routine", "send_message", "send_image", "send_message_to_agent", "delegate_task"]) {
     if (allowed.has(name) && TOOL_PROTOCOL_LINES[name]) lines.push(TOOL_PROTOCOL_LINES[name]!);
   }
   lines.push(`{"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed`);
@@ -285,6 +286,14 @@ export class GenericAdapter implements ModelAdapter {
       inv = { id, tool: "send_message", text: String((obj.send_message as Record<string, unknown>).text ?? "") };
     } else if (typeof obj.send_message === "string") {
       inv = { id, tool: "send_message", text: obj.send_message };
+    } else if (obj.send_image !== undefined) {
+      const s = (obj.send_image && typeof obj.send_image === "object" ? obj.send_image : {}) as Record<string, unknown>;
+      inv = {
+        id,
+        tool: "send_image",
+        path: s.path ? String(s.path) : typeof obj.send_image === "string" ? String(obj.send_image) : undefined,
+        caption: s.caption ? String(s.caption) : undefined,
+      };
     } else if (obj.send_message_to_agent && typeof obj.send_message_to_agent === "object") {
       const s = obj.send_message_to_agent as Record<string, unknown>;
       inv = { id, tool: "send_message_to_agent", toAgentName: String(s.toAgentName ?? ""), text: String(s.text ?? "") };

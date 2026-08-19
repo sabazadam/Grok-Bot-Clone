@@ -12,6 +12,23 @@ import { deliverAgentMessage } from "./orchestrator.js";
 import { callPlugin } from "../plugins/runtime.js";
 import { isToolAllowed } from "./toolPolicy.js";
 import { TOOL_POLICY_LABELS } from "@grokbot/shared";
+import { saveAttachments } from "../uploads.js";
+
+/** Best-effort image MIME from a filename extension. */
+function mimeFromName(name: string): string {
+  const ext = name.toLowerCase().split(".").pop() ?? "";
+  const map: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    svg: "image/svg+xml",
+    bmp: "image/bmp",
+    avif: "image/avif",
+  };
+  return map[ext] ?? "application/octet-stream";
+}
 
 export interface ExecContext {
   agent: Agent;
@@ -119,6 +136,40 @@ export async function executeInvocation(
     case "send_message": {
       // posted by the runner so it lands as a real chat message, not an activity pill
       return { outcome: { id: inv.id, tool: inv.tool, output: "sent" } };
+    }
+
+    case "send_image": {
+      try {
+        const wantsScreen = !inv.path || inv.path === "screen" || inv.path === "screenshot";
+        let files: { name: string; mime: string; dataBase64: string }[];
+        if (wantsScreen) {
+          const png = await computerManager.screenshot(agent.id);
+          files = [{ name: `screenshot-${Date.now()}.png`, mime: "image/png", dataBase64: png.toString("base64") }];
+        } else {
+          const { buffer, name } = await computerManager.copyFileOut(agent.id, inv.path!);
+          if (!buffer.length) {
+            return { outcome: { id: inv.id, tool: inv.tool, output: `"${inv.path}" is empty or unreadable`, isError: true } };
+          }
+          files = [{ name, mime: mimeFromName(name), dataBase64: buffer.toString("base64") }];
+        }
+        const attachments = saveAttachments(files);
+        if (attachments.length === 0) {
+          return { outcome: { id: inv.id, tool: inv.tool, output: "couldn't attach the image (too large — 12MB max — or unreadable)", isError: true } };
+        }
+        const msg = store.addMessage({
+          conversationId: ctx.conversationId,
+          sender: { kind: "agent", agentId: agent.id },
+          kind: "text",
+          text: (inv.caption ?? "").trim(),
+          attachments,
+        });
+        broadcast({ type: "message", message: msg });
+        const conv = store.getConversation(ctx.conversationId);
+        if (conv) broadcast({ type: "conversation_updated", conversation: conv });
+        return { outcome: { id: inv.id, tool: inv.tool, output: `sent image "${attachments[0]!.name}" to the chat` } };
+      } catch (err) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: `couldn't send image: ${(err as Error).message}`, isError: true } };
+      }
     }
 
     case "send_message_to_agent": {

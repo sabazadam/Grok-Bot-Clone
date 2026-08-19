@@ -134,6 +134,7 @@ export type GateableTool = (typeof GATEABLE_TOOLS)[number];
 /** Tools every agent may always use, regardless of policy. */
 export const ALWAYS_ALLOWED_TOOLS = [
   "send_message",
+  "send_image",
   "request_approval",
   "task_complete",
   "update_memory",

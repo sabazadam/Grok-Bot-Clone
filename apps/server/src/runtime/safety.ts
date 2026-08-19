@@ -77,6 +77,8 @@ export function describeExactAction(inv: ToolInvocation): string {
       return `Schedule “${inv.name}”${inv.schedule ? ` (${inv.schedule})` : inv.intervalMinutes ? ` every ${inv.intervalMinutes}m` : ""}`;
     case "send_message":
       return `Message the conversation: "${inv.text}"`;
+    case "send_image":
+      return inv.path ? `Send image ${inv.path} to the chat` : "Send a screenshot to the chat";
     case "send_message_to_agent":
       return `Message @${inv.toAgentName}: "${inv.text}"`;
     case "request_approval":

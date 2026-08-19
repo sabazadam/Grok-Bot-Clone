@@ -52,6 +52,10 @@ export class MockAdapter implements ModelAdapter {
         this.queue.push({ id: this.id(), tool: "send_message_to_agent", toAgentName: m[1]!, text: m[2]! });
       } else if ((m = line.match(/^say:\s*(.+)$/i))) {
         this.queue.push({ id: this.id(), tool: "send_message", text: m[1]! });
+      } else if ((m = line.match(/^send image(?::)?\s*(.+)$/i))) {
+        this.queue.push({ id: this.id(), tool: "send_image", path: m[1]!.trim() });
+      } else if (/^send (the )?screenshot to chat$/i.test(line)) {
+        this.queue.push({ id: this.id(), tool: "send_image" });
       } else if ((m = line.match(/^save skill ([^:]+):\s*(.+)$/i))) {
         this.queue.push({
           id: this.id(),

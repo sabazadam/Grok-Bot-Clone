@@ -97,6 +97,16 @@ export function customTools(allowed: Set<string>): NeutralTool[] {
       required: ["text"],
     },
     {
+      name: "send_image",
+      description:
+        "Send an IMAGE from your computer into this chat as an attachment the user can see. Use it to share a result the user asked for — e.g. an image you downloaded (save it first, e.g. `curl -o ~/workspace/pic.jpg <url>`), a file on your computer, or the CURRENT screen. Provide `path` to send a specific file (absolute or ~/…); omit `path` to send a screenshot of what's on screen right now. Add a short `caption` when helpful. Do NOT use this to narrate routine work — only to deliver an image the user wants.",
+      parameters: {
+        path: { type: "string", description: "Path to an image file on your computer (absolute or ~/...). Omit to send the current screen." },
+        caption: { type: "string", description: "Optional short caption shown with the image" },
+      },
+      required: [],
+    },
+    {
       name: "call_plugin",
       description:
         "Call a configured plugin / MCP connector. Use the plugin id (or name) and the tool name from the Plugins section of your system prompt. Not for routine sandbox work.",
@@ -208,6 +218,13 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
       };
     case "send_message":
       return { id, tool: "send_message", text: String(args.text ?? "") };
+    case "send_image":
+      return {
+        id,
+        tool: "send_image",
+        path: args.path !== undefined && args.path !== null && String(args.path).trim() ? String(args.path).trim() : undefined,
+        caption: args.caption ? String(args.caption) : undefined,
+      };
     case "task_complete":
       return { id, tool: "task_complete", summary: String(args.summary ?? "") };
     case "call_plugin":

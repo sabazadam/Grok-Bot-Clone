@@ -80,6 +80,21 @@ describe("MockAdapter reporting", () => {
     expect(inv.concurrency).toBe(2);
   });
 
+  it("parses 'send image <path>' into a send_image invocation", async () => {
+    const a = new MockAdapter(init);
+    const d = await a.start("New message from the user:\nsend image ~/workspace/cat.jpg", "");
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({ tool: "send_image", path: "~/workspace/cat.jpg" });
+  });
+
+  it("parses 'send the screenshot to chat' into a pathless send_image", async () => {
+    const a = new MockAdapter(init);
+    const d = await a.start("New message from the user:\nsend the screenshot to chat", "");
+    if (d.kind !== "act") throw new Error();
+    expect(d.invocations[0]).toMatchObject({ tool: "send_image" });
+    expect((d.invocations[0] as { path?: string }).path).toBeUndefined();
+  });
+
   it("ACKs a teammate FYI that needs no action — no chat report", async () => {
     const a = new MockAdapter(init);
     const d = await a.start(

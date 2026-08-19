@@ -48,6 +48,7 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
     case "request_approval":
     case "task_complete":
     case "call_plugin":
+    case "send_image": // posts its own message (with the attachment) directly
       return false;
   }
 }
