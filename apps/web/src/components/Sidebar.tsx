@@ -138,6 +138,11 @@ function AgentRow({
     <div className="group relative">
       <button
         onClick={onOpen}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/agent", agent.id);
+          e.dataTransfer.effectAllowed = "move";
+        }}
         className="flex w-full items-center gap-2.5 rounded-[14px] px-2 py-[7px] text-left"
         style={{ background: selected ? "var(--selected)" : "transparent" }}
       >
@@ -187,17 +192,24 @@ function Section({
   children,
   collapsed,
   onToggle,
+  count,
 }: {
   title: string;
   children: React.ReactNode;
   collapsed: boolean;
   onToggle: () => void;
+  count?: number;
 }) {
   return (
     <div className="mb-1">
       <button type="button" onClick={onToggle} className="gb-section flex w-full items-center gap-1.5">
         <span className="text-[9px] opacity-70">{collapsed ? "▶" : "▼"}</span>
         {title}
+        {count !== undefined && count > 0 && (
+          <span className="ml-auto text-[11px] font-normal" style={{ color: "var(--muted)" }}>
+            {count}
+          </span>
+        )}
       </button>
       {!collapsed && children}
     </div>
@@ -219,13 +231,25 @@ export function Sidebar({
   onPlugins: () => void;
   onNavigate: (id: string | null, highlightMessageId?: string) => void;
 }) {
-  const { state } = useStore();
+  const { state, refreshAgents } = useStore();
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<SearchHit[]>([]);
   const [showHidden, setShowHidden] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [dropZone, setDropZone] = useState<"temp" | "team" | null>(null);
   const plusRef = useRef<HTMLDivElement>(null);
+
+  async function setAgentKind(agentId: string, kind: "standard" | "specialist") {
+    const agent = state.agents.find((a) => a.id === agentId);
+    if (!agent || agent.agentKind === kind) return;
+    try {
+      await api.updateAgent(agentId, { agentKind: kind });
+      await refreshAgents();
+    } catch {
+      /* ignore */
+    }
+  }
 
   const agentById = useMemo(() => new Map(state.agents.map((a) => [a.id, a])), [state.agents]);
   const directByAgent = useMemo(() => {
@@ -260,8 +284,11 @@ export function Sidebar({
     pinned.filter((c) => c.kind === "direct").map((c) => c.agentIds[0]).filter((id): id is string => !!id),
   );
   const pinnedGroupIds = new Set(pinned.filter((c) => c.kind === "group").map((c) => c.id));
-  const leaders = visible.filter((a) => a.isTeamLead && !pinnedAgentIds.has(a.id));
-  const nonLeaders = visible.filter((a) => !a.isTeamLead && !pinnedAgentIds.has(a.id));
+  // Spawned specialists get their own "Temp Agents" section (like official Grok Bot).
+  const specialists = visible.filter((a) => a.agentKind === "specialist" && !pinnedAgentIds.has(a.id));
+  const specialistIds = new Set(specialists.map((a) => a.id));
+  const leaders = visible.filter((a) => a.isTeamLead && !pinnedAgentIds.has(a.id) && !specialistIds.has(a.id));
+  const nonLeaders = visible.filter((a) => !a.isTeamLead && !pinnedAgentIds.has(a.id) && !specialistIds.has(a.id));
   const teamNames = [...new Set(nonLeaders.map((a) => (a.team ?? "").trim()).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b),
   );
@@ -376,6 +403,33 @@ export function Sidebar({
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-3">
+        {!q && (
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDropZone("temp");
+            }}
+            onDragLeave={() => setDropZone((z) => (z === "temp" ? null : z))}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDropZone(null);
+              const id = e.dataTransfer.getData("text/agent");
+              if (id) void setAgentKind(id, "specialist");
+            }}
+            className="mb-1 rounded-xl"
+            style={{ outline: dropZone === "temp" ? "2px dashed var(--accent)" : "none", outlineOffset: -2 }}
+          >
+            <Section title="Temp Agents" collapsed={!!collapsed["Temp Agents"]} onToggle={() => toggle("Temp Agents")} count={specialists.length}>
+              {specialists.length > 0 ? (
+                rows(specialists)
+              ) : (
+                <p className="px-3 py-2 text-[12px]" style={{ color: "var(--muted)" }}>
+                  Drag chats here
+                </p>
+              )}
+            </Section>
+          </div>
+        )}
         {hits.length > 0 && (
           <Section title="Messages" collapsed={!!collapsed.Messages} onToggle={() => toggle("Messages")}>
             {hits.map((h) => (
@@ -433,13 +487,34 @@ export function Sidebar({
             })}
           </Section>
         )}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDropZone("team");
+          }}
+          onDragLeave={() => setDropZone((z) => (z === "team" ? null : z))}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDropZone(null);
+            const id = e.dataTransfer.getData("text/agent");
+            if (id) void setAgentKind(id, "standard");
+          }}
+          className="rounded-xl"
+          style={{ outline: dropZone === "team" ? "2px dashed var(--border)" : "none", outlineOffset: -2 }}
+        >
         {leaders.length > 0 && (
-          <Section title="Leaders" collapsed={!!collapsed.Leaders} onToggle={() => toggle("Leaders")}>
+          <Section title="Leaders" collapsed={!!collapsed.Leaders} onToggle={() => toggle("Leaders")} count={leaders.length}>
             {rows(leaders)}
           </Section>
         )}
         {teamNames.map((team) => (
-          <Section key={team} title={team} collapsed={!!collapsed[team]} onToggle={() => toggle(team)}>
+          <Section
+            key={team}
+            title={team}
+            collapsed={!!collapsed[team]}
+            onToggle={() => toggle(team)}
+            count={nonLeaders.filter((a) => (a.team ?? "").trim() === team).length}
+          >
             {rows(nonLeaders.filter((a) => (a.team ?? "").trim() === team))}
           </Section>
         ))}
@@ -448,12 +523,13 @@ export function Sidebar({
             title={leaders.length || teamNames.length ? "Unassigned" : "Teammates"}
             collapsed={!!collapsed.Unassigned}
             onToggle={() => toggle("Unassigned")}
+            count={unassigned.length}
           >
             {rows(unassigned)}
           </Section>
         )}
         {groups.length > 0 && (
-          <Section title="Groups" collapsed={!!collapsed.Groups} onToggle={() => toggle("Groups")}>
+          <Section title="Groups" collapsed={!!collapsed.Groups} onToggle={() => toggle("Groups")} count={groups.length}>
             {groups.map((c) => {
               const groupMembers = c.agentIds.map((id) => agentById.get(id)).filter((x): x is Agent => !!x);
               const selected = state.selectedId === c.id;
@@ -482,6 +558,7 @@ export function Sidebar({
             })}
           </Section>
         )}
+        </div>
 
         {visible.length === 0 && groups.length === 0 && hits.length === 0 && q.length < 2 && (
           <p className="px-3 py-8 text-center text-[13px]" style={{ color: "var(--muted)" }}>

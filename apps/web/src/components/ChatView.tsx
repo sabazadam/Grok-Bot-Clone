@@ -254,7 +254,10 @@ function Bubble({
   const [picker, setPicker] = useState(false);
   const reactions = Object.entries(message.reactions ?? {}).filter(([, n]) => n > 0);
   return (
-    <div id={`msg-${message.id}`} className={`group my-2.5 ${highlight ? "gb-highlight" : ""}`}>
+    <div
+      id={`msg-${message.id}`}
+      className={`group my-2.5 flex flex-col ${isUser ? "items-end" : "items-start"} ${highlight ? "gb-highlight" : ""}`}
+    >
       {!isUser && !isSystem && agent && (
         <div className="mb-1 flex items-center gap-2">
           <Avatar agent={agent} size={18} />
@@ -263,14 +266,12 @@ function Bubble({
           </span>
         </div>
       )}
-      {isUser && (
-        <div className="mb-1 text-[12px]" style={{ color: "var(--muted)" }}>
-          You
-        </div>
-      )}
       <div
         className="max-w-[520px] rounded-2xl px-3.5 py-2.5 text-[15px] leading-[1.45] whitespace-pre-wrap"
-        style={{ background: "var(--bubble)", color: "var(--bubble-text)" }}
+        style={{
+          background: isUser ? "var(--bubble-user)" : "var(--bubble-agent)",
+          color: isUser ? "var(--bubble-user-text)" : "var(--bubble-agent-text)",
+        }}
       >
         {message.text}
         {message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
