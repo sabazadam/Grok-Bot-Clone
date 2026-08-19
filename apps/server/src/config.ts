@@ -78,6 +78,16 @@ export const config = {
 
   agentDesktopImage: env("AGENT_DESKTOP_IMAGE", "grokbot/agent-desktop:latest"),
 
+  /** Code Guardian (repo-health reviewer). */
+  // Create the permanent "Code Guardian" agent + skill + (disabled) routine on boot.
+  codeGuardianEnabled: env("CODE_GUARDIAN", "0") === "1",
+  // Default repo Code Guardian reviews (git URL or a path). Optional; a request can name another.
+  codeGuardianRepo: env("CODE_GUARDIAN_REPO", ""),
+  // Branch that a push webhook must target to trigger a review.
+  codeGuardianBranch: env("CODE_GUARDIAN_BRANCH", "main"),
+  // Shared secret for the inbound git webhook (POST /api/hooks/git). Empty = webhook disabled.
+  gitWebhookSecret: env("GIT_WEBHOOK_SECRET", ""),
+
   /** Built web UI directory; when present it's served at "/" so the whole app runs on one port. */
   webDist: env("WEB_DIST", path.resolve(process.cwd(), "../web/dist")),
 };

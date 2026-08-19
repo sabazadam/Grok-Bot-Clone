@@ -9,6 +9,7 @@ import * as store from "./store.js";
 import * as service from "./agents/service.js";
 import { broadcast } from "./bus.js";
 import { startScheduler } from "./runtime/scheduler.js";
+import { ensureCodeGuardian } from "./runtime/codeGuardian.js";
 
 async function main() {
   ensureDataDirs();
@@ -23,6 +24,15 @@ async function main() {
   }
   for (const agent of store.assignMissingFaceShapes()) {
     broadcast({ type: "agent_updated", agent });
+  }
+  // Optional repo-health reviewer (Cursor-Automations style). Off unless CODE_GUARDIAN=1, or a git
+  // webhook secret is configured (so pushes have an agent to trigger).
+  if (config.codeGuardianEnabled || config.gitWebhookSecret) {
+    try {
+      ensureCodeGuardian();
+    } catch (err) {
+      console.error("[code-guardian] setup failed:", err);
+    }
   }
   void computerManager
     .reapOrphans(store.listAgents().map((a) => a.id))

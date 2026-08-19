@@ -19,6 +19,8 @@ import { setTakeover } from "./runtime/takeover.js";
 import { MAX_ATTACH_FILES, saveAttachments, uploadsDir } from "./uploads.js";
 import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
 import { forgetPlugin } from "./plugins/runtime.js";
+import { triggerCodeGuardianReview, parsePushPayload } from "./runtime/codeGuardian.js";
+import { timingSafeEqual } from "node:crypto";
 
 const providerEnum = z.enum(["anthropic", "openai", "google", "generic"]);
 
@@ -47,6 +49,15 @@ function customPolicyError(data: { toolPolicy?: string; toolAllow?: string[] }):
     return "custom tool policy requires a non-empty toolAllow list";
   }
   return undefined;
+}
+
+/** Constant-time token comparison for the git webhook. */
+export function tokenMatches(provided: string | undefined, secret: string): boolean {
+  if (!provided || !secret) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(secret);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
 }
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
@@ -487,6 +498,29 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!store.getRoutine(id)) return reply.code(404).send({ error: "not found" });
     const ok = runRoutineNow(id);
     return { ok };
+  });
+
+  // ── git webhook → Code Guardian (opt-in, token-guarded) ───────────────
+  // Disabled unless GIT_WEBHOOK_SECRET is set. Point a GitHub push webhook here with the token in
+  // the `x-webhook-token` header (or `?token=`), e.g. via a small proxy. A push to the watched
+  // branch triggers a Code Guardian review; it suggests fixes and never auto-merges.
+  app.post("/api/hooks/git", async (req, reply) => {
+    const secret = config.gitWebhookSecret;
+    if (!secret) return reply.code(404).send({ error: "git webhook disabled (set GIT_WEBHOOK_SECRET)" });
+    const headerToken = req.headers["x-webhook-token"] as string | undefined;
+    const queryToken = (req.query as { token?: string }).token;
+    if (!tokenMatches(headerToken ?? queryToken, secret)) {
+      return reply.code(401).send({ error: "invalid or missing webhook token" });
+    }
+    const { branch, repo } = parsePushPayload(req.body);
+    if (branch && branch !== config.codeGuardianBranch) {
+      return { ok: true, triggered: false, reason: `ignoring push to ${branch} (watching ${config.codeGuardianBranch})` };
+    }
+    const triggered = triggerCodeGuardianReview({ repo, reason: branch ? `push to ${branch}` : "git webhook" });
+    if (!triggered) {
+      return reply.code(409).send({ error: "Code Guardian is not set up — enable CODE_GUARDIAN=1 or seed it" });
+    }
+    return { ok: true, triggered: true };
   });
 
   // ── approvals & task control ──────────────────────────────────────────
