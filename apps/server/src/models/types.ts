@@ -20,6 +20,8 @@ export interface ToolOutcome {
   /** fresh screenshot after computer/bash actions */
   screenshotB64?: string;
   isError?: boolean;
+  /** agent↔agent thread created by send_message_to_agent */
+  relatedConversationId?: string;
 }
 
 export type AgentDecision =

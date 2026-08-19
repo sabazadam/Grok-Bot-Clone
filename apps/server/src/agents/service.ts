@@ -99,6 +99,7 @@ export async function duplicateAgent(agentId: string): Promise<Agent | undefined
     collaborationEnabled: src.collaborationEnabled,
     stealthBrowsing: src.stealthBrowsing,
     isTeamLead: src.isTeamLead,
+    team: src.team,
   });
   store.copyAgentSkills(src.id, copy.id);
   const conv = store.createConversation("direct", copy.name, [copy.id]);

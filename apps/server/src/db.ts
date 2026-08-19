@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS agents (
   stealth_browsing INTEGER NOT NULL DEFAULT 1,
   hidden INTEGER NOT NULL DEFAULT 0,
   is_team_lead INTEGER NOT NULL DEFAULT 0,
+  team TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'off',
   created_at INTEGER NOT NULL
 );
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS messages (
   text TEXT NOT NULL,
   approval_id TEXT,
   screenshot_url TEXT,
+  related_conversation_id TEXT,
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
@@ -136,12 +138,19 @@ function migrate(d: Database.Database): void {
   if (!cols.has("is_team_lead")) {
     d.exec(`ALTER TABLE agents ADD COLUMN is_team_lead INTEGER NOT NULL DEFAULT 0`);
   }
+  if (!cols.has("team")) {
+    d.exec(`ALTER TABLE agents ADD COLUMN team TEXT NOT NULL DEFAULT ''`);
+  }
   const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
   if (routineCols.size > 0 && !routineCols.has("schedule_json")) {
     d.exec(`ALTER TABLE routines ADD COLUMN schedule_json TEXT`);
   }
   if (routineCols.size > 0 && !routineCols.has("timezone")) {
     d.exec(`ALTER TABLE routines ADD COLUMN timezone TEXT NOT NULL DEFAULT 'America/New_York'`);
+  }
+  const msgCols = new Set((d.prepare(`PRAGMA table_info(messages)`).all() as { name: string }[]).map((c) => c.name));
+  if (msgCols.size > 0 && !msgCols.has("related_conversation_id")) {
+    d.exec(`ALTER TABLE messages ADD COLUMN related_conversation_id TEXT`);
   }
 }
 

@@ -73,6 +73,27 @@ describe("agent store", () => {
     expect(r.nextRunAt).toBeGreaterThan(Date.now());
   });
 
+  it("creates a reusable hierarchical agent DM that is not a direct chat", () => {
+    const lead = makeAgent({ name: "Lead", isTeamLead: true, team: "Social Media" });
+    const worker = makeAgent({ name: "Worker", team: "Social Media" });
+    expect(lead.team).toBe("Social Media");
+    const a = store.ensureAgentDm(lead.id, worker.id);
+    const b = store.ensureAgentDm(worker.id, lead.id);
+    expect(a.id).toBe(b.id);
+    expect(a.kind).toBe("agent_dm");
+    expect(a.agentIds.slice().sort()).toEqual([lead.id, worker.id].sort());
+    expect(store.directConversationForAgent(worker.id)?.id).not.toBe(a.id);
+    const direct = store.ensureDirectConversation(lead.id);
+    const marker = store.addMessage({
+      conversationId: direct.id,
+      sender: { kind: "agent", agentId: lead.id },
+      kind: "text",
+      text: "Messaged Worker",
+      relatedConversationId: a.id,
+    });
+    expect(store.listMessages(direct.id).find((m) => m.id === marker.id)?.relatedConversationId).toBe(a.id);
+  });
+
   it("honors stealthBrowsing=false and updates it", () => {
     const a = makeAgent({ stealthBrowsing: false });
     expect(a.stealthBrowsing).toBe(false);

@@ -28,6 +28,7 @@ const agentBody = z.object({
   collaborationEnabled: z.boolean().default(true),
   stealthBrowsing: z.boolean().default(true),
   isTeamLead: z.boolean().default(false),
+  team: z.string().max(40).default(""),
 });
 
 export async function registerRoutes(app: FastifyInstance): Promise<void> {

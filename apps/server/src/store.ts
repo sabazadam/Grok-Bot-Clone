@@ -38,6 +38,7 @@ function rowToAgent(r: any): Agent {
     stealthBrowsing: !!r.stealth_browsing,
     hidden: !!r.hidden,
     isTeamLead: !!r.is_team_lead,
+    team: (r.team as string) ?? "",
     status: r.status as AgentStatus,
     createdAt: r.created_at,
   };
@@ -69,6 +70,7 @@ function rowToMessage(r: any): Message {
     text: r.text,
     approvalId: r.approval_id ?? undefined,
     screenshotUrl: r.screenshot_url ?? undefined,
+    relatedConversationId: r.related_conversation_id ?? undefined,
     createdAt: r.created_at,
   };
 }
@@ -117,14 +119,15 @@ export interface NewAgent {
   collaborationEnabled: boolean;
   stealthBrowsing: boolean;
   isTeamLead?: boolean;
+  team?: string;
 }
 
 export function createAgent(a: NewAgent): Agent {
   const id = nanoid(10);
   getDb()
     .prepare(
-      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, status, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'off', ?)`,
+      `INSERT INTO agents (id, name, role_title, instructions, avatar_color, provider, model, collaboration_enabled, stealth_browsing, hidden, is_team_lead, team, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'off', ?)`,
     )
     .run(
       id,
@@ -137,6 +140,7 @@ export function createAgent(a: NewAgent): Agent {
       a.collaborationEnabled ? 1 : 0,
       a.stealthBrowsing ? 1 : 0,
       a.isTeamLead ? 1 : 0,
+      a.team?.trim() ?? "",
       Date.now(),
     );
   return getAgent(id)!;
@@ -162,7 +166,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
   const merged = { ...cur, ...patch };
   getDb()
     .prepare(
-      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=? WHERE id=?`,
+      `UPDATE agents SET name=?, role_title=?, instructions=?, avatar_color=?, provider=?, model=?, collaboration_enabled=?, stealth_browsing=?, is_team_lead=?, team=? WHERE id=?`,
     )
     .run(
       merged.name,
@@ -174,6 +178,7 @@ export function updateAgent(id: string, patch: Partial<NewAgent>): Agent | undef
       merged.collaborationEnabled ? 1 : 0,
       merged.stealthBrowsing ? 1 : 0,
       merged.isTeamLead ? 1 : 0,
+      merged.team?.trim() ?? "",
       id,
     );
   return getAgent(id);
@@ -235,12 +240,34 @@ export function directConversationForAgent(agentId: string): Conversation | unde
   return listConversations().find((c) => c.kind === "direct" && c.agentIds.length === 1 && c.agentIds[0] === agentId);
 }
 
-/** The agent's own chat, created if missing. Agent-to-agent delegation lands here. */
+/** The agent's own chat, created if missing. */
 export function ensureDirectConversation(agentId: string): Conversation {
   const existing = directConversationForAgent(agentId);
   if (existing) return existing;
   const name = getAgent(agentId)?.name ?? "Agent";
   return createConversation("direct", name, [agentId]);
+}
+
+/** View-only lead↔teammate thread. Not listed in the sidebar. */
+export function ensureAgentDm(agentIdA: string, agentIdB: string): Conversation {
+  const ids = [agentIdA, agentIdB].slice().sort();
+  const key = ids.join("\0");
+  const existing = listConversations().find((c) => {
+    if (c.kind !== "agent_dm" || c.agentIds.length !== 2) return false;
+    return c.agentIds.slice().sort().join("\0") === key;
+  });
+  if (existing) return existing;
+  const na = getAgent(ids[0]!)?.name ?? "Agent";
+  const nb = getAgent(ids[1]!)?.name ?? "Agent";
+  return createConversation("agent_dm", `${na} ↔ ${nb}`, ids);
+}
+
+export function agentDmFor(agentIdA: string, agentIdB: string): Conversation | undefined {
+  const key = [agentIdA, agentIdB].slice().sort().join("\0");
+  return listConversations().find((c) => {
+    if (c.kind !== "agent_dm" || c.agentIds.length !== 2) return false;
+    return c.agentIds.slice().sort().join("\0") === key;
+  });
 }
 
 export function renameConversation(id: string, title: string): void {
@@ -267,6 +294,7 @@ export interface NewMessage {
   text: string;
   approvalId?: string;
   screenshotUrl?: string;
+  relatedConversationId?: string;
 }
 
 export function addMessage(m: NewMessage): Message {
@@ -274,8 +302,8 @@ export function addMessage(m: NewMessage): Message {
   const now = Date.now();
   getDb()
     .prepare(
-      `INSERT INTO messages (id, conversation_id, sender_kind, sender_agent_id, kind, text, approval_id, screenshot_url, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (id, conversation_id, sender_kind, sender_agent_id, kind, text, approval_id, screenshot_url, related_conversation_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -286,6 +314,7 @@ export function addMessage(m: NewMessage): Message {
       m.text,
       m.approvalId ?? null,
       m.screenshotUrl ?? null,
+      m.relatedConversationId ?? null,
       now,
     );
   getDb().prepare(`UPDATE conversations SET last_message_at=? WHERE id=?`).run(now, m.conversationId);

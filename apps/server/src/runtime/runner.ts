@@ -29,13 +29,14 @@ export interface RunTaskOptions {
   triggeredBy: { kind: "user" } | { kind: "agent"; agentId: string };
 }
 
-function postAgentText(agent: Agent, conversationId: string, text: string): void {
+function postAgentText(agent: Agent, conversationId: string, text: string, relatedConversationId?: string): void {
   if (!text.trim()) return;
   const msg = store.addMessage({
     conversationId,
     sender: { kind: "agent", agentId: agent.id },
     kind: "text",
     text: text.trim(),
+    relatedConversationId,
   });
   broadcast({ type: "message", message: msg });
 }
@@ -175,7 +176,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
         // real communication (a teammate handoff the user should see).
         if (shouldPostToolToChat(inv) && !outcome.isError) {
           const note = communicationCaption(inv);
-          if (note) postAgentText(agent, conversation.id, note);
+          if (note) postAgentText(agent, conversation.id, note, outcome.relatedConversationId);
         }
       }
 
@@ -202,10 +203,9 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
     postAgentText(agent, conversation.id, finalText);
   }
 
-  // Note: a delegated agent does NOT auto-forward its reply back to the requester
-  // (that caused noisy ping-pong). Its result stays visible in its own chat; if it
-  // wants to report back, it explicitly uses send_message_to_agent, which lands in
-  // the requester's chat. This keeps agent-to-agent traffic intentional.
+  // A delegated agent does not auto-forward its reply. The full handoff lives in
+  // the private agent_dm thread; each agent's user chat only gets a "Messaged" /
+  // "From" chip that opens that view-only panel.
 
   // group-chat handoffs: @mentions in the final reply wake those agents
   if (!failed && conversation.kind === "group" && finalText && !isAck) {

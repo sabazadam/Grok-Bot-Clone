@@ -40,6 +40,8 @@ export interface Agent {
    * request and hand work to specialists.
    */
   isTeamLead: boolean;
+  /** Sidebar folder (Leaders / Social Media / Unassigned, etc.). */
+  team: string;
   status: AgentStatus;
   /** Host ports of this agent's computer, when provisioned */
   computer?: ComputerInfo;
@@ -89,6 +91,8 @@ export interface Message {
   approvalId?: string;
   /** optional path of a step screenshot associated with an activity */
   screenshotUrl?: string;
+  /** agent↔agent thread opened from a "Messaged X" chip (not a sidebar chat) */
+  relatedConversationId?: string;
   createdAt: number;
 }
 

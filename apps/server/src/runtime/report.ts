@@ -51,9 +51,8 @@ export function shouldPostToolToChat(inv: ToolInvocation): boolean {
 }
 
 /** Caption shown in the sender's chat when they hand work to a teammate. */
-export function handoffCaption(toAgentName: string, text: string): string {
-  const clipped = text.length > 280 ? `${text.slice(0, 277)}…` : text;
-  return `→ @${toAgentName}: ${clipped}`;
+export function handoffCaption(toAgentName: string, _text?: string): string {
+  return `Messaged ${toAgentName}`;
 }
 
 /** User-visible caption for an explicit communication / team-structure tool. */

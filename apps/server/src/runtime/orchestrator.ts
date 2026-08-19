@@ -116,8 +116,9 @@ export function dispatchUserMessage(conversation: Conversation, message: Message
 }
 
 /**
- * Deliver an agent-to-agent message into the RECIPIENT'S OWN chat (their direct
- * conversation), then wake them to act on it there.
+ * Deliver an agent-to-agent message into a view-only hierarchical thread
+ * (not a sidebar chat). The recipient is woken on that thread. Markers in
+ * each agent's user chat let you open the thread from either workspace.
  */
 export function deliverAgentMessage(opts: {
   fromAgentId: string;
@@ -126,26 +127,41 @@ export function deliverAgentMessage(opts: {
   rootMessageId: string;
 }): { delivered: boolean; conversationId?: string } {
   if (!consumeTurn(opts.rootMessageId)) return { delivered: false };
-  const conv = store.ensureDirectConversation(opts.toAgentId);
+  const from = store.getAgent(opts.fromAgentId);
+  const to = store.getAgent(opts.toAgentId);
+  const dm = store.ensureAgentDm(opts.fromAgentId, opts.toAgentId);
   const msg = store.addMessage({
-    conversationId: conv.id,
+    conversationId: dm.id,
     sender: { kind: "agent", agentId: opts.fromAgentId },
     kind: "text",
     text: opts.text,
   });
   broadcast({ type: "message", message: msg });
-  const updated = store.getConversation(conv.id);
+  const updated = store.getConversation(dm.id);
   if (updated) broadcast({ type: "conversation_updated", conversation: updated });
+
+  const recipientDirect = store.ensureDirectConversation(opts.toAgentId);
+  const inbound = store.addMessage({
+    conversationId: recipientDirect.id,
+    sender: { kind: "agent", agentId: opts.fromAgentId },
+    kind: "text",
+    text: `From ${from?.name ?? "teammate"}`,
+    relatedConversationId: dm.id,
+  });
+  broadcast({ type: "message", message: inbound });
+  const inboundConv = store.getConversation(recipientDirect.id);
+  if (inboundConv) broadcast({ type: "conversation_updated", conversation: inboundConv });
+
   enqueue(opts.toAgentId, () =>
     runAgentTask({
       agentId: opts.toAgentId,
-      conversationId: conv.id,
+      conversationId: dm.id,
       prompt: opts.text,
       rootMessageId: opts.rootMessageId,
       triggeredBy: { kind: "agent", agentId: opts.fromAgentId },
     }),
   );
-  return { delivered: true, conversationId: conv.id };
+  return { delivered: true, conversationId: dm.id };
 }
 
 export function dispatchAgentMessage(opts: {

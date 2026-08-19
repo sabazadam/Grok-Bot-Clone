@@ -68,6 +68,6 @@ describe("silent replies", () => {
 
 describe("handoff caption", () => {
   it("shows the teammate handoff in the sender's chat", () => {
-    expect(handoffCaption("Scout", "Research these 5 accounts.")).toBe("→ @Scout: Research these 5 accounts.");
+    expect(handoffCaption("Scout", "Research these 5 accounts.")).toBe("Messaged Scout");
   });
 });

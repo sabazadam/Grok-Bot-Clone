@@ -119,8 +119,8 @@ export async function executeInvocation(
           },
         };
       }
-      // Deliver into the recipient's OWN chat; they act & reply there.
-      const { delivered } = deliverAgentMessage({
+      // Deliver into a view-only lead↔teammate thread (not a sidebar chat).
+      const { delivered, conversationId } = deliverAgentMessage({
         fromAgentId: agent.id,
         toAgentId: recipient.id,
         text: inv.text,
@@ -131,9 +131,10 @@ export async function executeInvocation(
           id: inv.id,
           tool: inv.tool,
           output: delivered
-            ? `delivered to ${recipient.name} in their chat; they will act on their own computer and reply only if a result is needed`
+            ? `delivered to ${recipient.name} in a private thread; they will act on their own computer and reply only if a result is needed`
             : `NOT delivered — the agent-to-agent turn budget for this request is exhausted`,
           isError: !delivered,
+          relatedConversationId: conversationId,
         },
       };
     }
