@@ -146,6 +146,21 @@ describe("agent store", () => {
     expect(store.listConversations()[0]!.id).toBe(cb.id);
   });
 
+  it("returns the newest messages when a chat exceeds the window", () => {
+    const a = makeAgent({ name: "Archivist" });
+    const conv = store.ensureDirectConversation(a.id);
+    for (let i = 0; i < 8; i++) {
+      store.addMessage({
+        conversationId: conv.id,
+        sender: { kind: "user" },
+        kind: "text",
+        text: `msg-${i}`,
+      });
+    }
+    const windowed = store.listMessages(conv.id, 3);
+    expect(windowed.map((m) => m.text)).toEqual(["msg-5", "msg-6", "msg-7"]);
+  });
+
   it("stores attachments and toggles reactions", () => {
     const a = makeAgent({ name: "Piper" });
     const conv = store.ensureDirectConversation(a.id);

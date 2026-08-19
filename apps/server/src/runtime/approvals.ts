@@ -35,7 +35,8 @@ export async function requestApproval(input: {
     const timer = setTimeout(
       () => {
         waiters.delete(approval.id);
-        store.resolveApproval(approval.id, "rejected");
+        const timedOut = store.resolveApproval(approval.id, "rejected");
+        if (timedOut) broadcast({ type: "approval_resolved", approval: timedOut });
         resolve("timeout");
       },
       input.timeoutMs ?? 15 * 60 * 1000,
