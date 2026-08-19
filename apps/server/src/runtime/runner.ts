@@ -58,8 +58,7 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
   let failed = false;
 
   try {
-    await service.makeRoomForComputer(agent.id);
-    await computerManager.ensureRunning(agent.id);
+    await service.acquireComputer(agent.id);
     await service.syncBrowserConfig(agent.id);
     const browseUrls = inferBrowseUrls(opts.prompt);
     const browseUrl = browseUrls[0];

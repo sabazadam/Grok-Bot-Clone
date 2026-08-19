@@ -31,6 +31,11 @@ export function setStatus(agentId: string, status: AgentStatus): void {
   broadcast({ type: "agent_status", agentId, status });
 }
 
+/** Statuses that mean a desktop must not be idle-stopped or evicted. */
+export function protectsComputerFromIdleStop(status: AgentStatus): boolean {
+  return status === "working" || status === "starting" || status === "waiting_approval";
+}
+
 /** Clear stale waiting/working flags after a restart or a leftover seed. */
 export function reconcileStatuses(): { agentId: string; status: AgentStatus }[] {
   const changes = store.reconcileAgentStatuses();
@@ -57,11 +62,7 @@ export async function makeRoomForComputer(agentId: string): Promise<void> {
   const protectedIds = new Set(
     store
       .listAgents()
-      .filter(
-        (a) =>
-          a.id !== agentId &&
-          (a.status === "working" || a.status === "starting" || a.status === "waiting_approval"),
-      )
+      .filter((a) => a.id !== agentId && protectsComputerFromIdleStop(a.status))
       .map((a) => a.id),
   );
   protectedIds.add(agentId);
@@ -72,11 +73,23 @@ export async function makeRoomForComputer(agentId: string): Promise<void> {
   if (agent) broadcast({ type: "agent_updated", agent: await agentWithComputer(agent) });
 }
 
+/**
+ * Evict if needed and boot this agent's desktop as one critical section.
+ * Parallel task starts (routines, several DMs) used to race the cap check
+ * and launch more computers than MAX_RUNNING_COMPUTERS.
+ */
+export async function acquireComputer(agentId: string): Promise<void> {
+  computerManager.touch(agentId);
+  await computerManager.exclusiveStart(async () => {
+    await makeRoomForComputer(agentId);
+    await computerManager.ensureRunningUnlocked(agentId);
+  });
+}
+
 export async function provisionComputer(agentId: string): Promise<void> {
   setStatus(agentId, "starting");
   try {
-    await makeRoomForComputer(agentId);
-    await computerManager.ensureRunning(agentId);
+    await acquireComputer(agentId);
     await syncBrowserConfig(agentId);
     setStatus(agentId, "idle");
   } catch (err) {
