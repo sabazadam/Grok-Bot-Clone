@@ -10,7 +10,7 @@ export type ToolInvocation =
   | { id: string; tool: "request_approval"; description: string; reason: string }
   | { id: string; tool: "save_skill"; name: string; description: string; instructions: string }
   | { id: string; tool: "create_agent"; name: string; roleTitle: string; instructions: string; isTeamLead?: boolean }
-  | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes: number; skillName?: string }
+  | { id: string; tool: "create_routine"; name: string; prompt: string; intervalMinutes?: number; schedule?: string; skillName?: string }
   | { id: string; tool: "task_complete"; summary: string };
 
 export interface ToolOutcome {

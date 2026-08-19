@@ -364,7 +364,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         agentId: z.string(),
         name: z.string().min(1).max(80),
         prompt: z.string().min(1).max(20000),
-        intervalMinutes: z.number().min(1).max(60 * 24 * 30),
+        intervalMinutes: z.number().min(1).max(60 * 24 * 30).optional(),
+        schedule: z.string().min(1).max(200).optional(),
         skillId: z.string().optional(),
       })
       .safeParse(req.body);
@@ -373,7 +374,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (store.listRoutines(body.data.agentId).length >= 50) {
       return reply.code(400).send({ error: "this agent already has 50 routines" });
     }
-    const routine = store.createRoutine(body.data);
+    let routine;
+    try {
+      routine = store.createRoutine(body.data);
+    } catch (err) {
+      return reply.code(400).send({ error: (err as Error).message });
+    }
     broadcast({ type: "routine_updated", routine });
     return routine;
   });
@@ -385,6 +391,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
         name: z.string().min(1).max(80).optional(),
         prompt: z.string().min(1).max(20000).optional(),
         intervalMinutes: z.number().min(1).max(60 * 24 * 30).optional(),
+        schedule: z.string().min(1).max(200).optional(),
         enabled: z.boolean().optional(),
         skillId: z.string().nullable().optional(),
       })

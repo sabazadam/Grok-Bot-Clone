@@ -60,6 +60,19 @@ describe("agent store", () => {
     expect(store.listDueRoutines(Date.now() + 31 * 60_000).map((x) => x.id)).toContain(r.id);
   });
 
+  it("accepts a natural-language morning schedule", () => {
+    const a = makeAgent({ name: "Piper" });
+    const r = store.createRoutine({
+      agentId: a.id,
+      name: "Inbox",
+      prompt: "Summarize inbox",
+      schedule: "every morning",
+    });
+    expect(r.scheduleLabel).toMatch(/8 AM/i);
+    expect(r.timezone).toBeTruthy();
+    expect(r.nextRunAt).toBeGreaterThan(Date.now());
+  });
+
   it("honors stealthBrowsing=false and updates it", () => {
     const a = makeAgent({ stealthBrowsing: false });
     expect(a.stealthBrowsing).toBe(false);

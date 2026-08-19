@@ -68,14 +68,18 @@ export function customTools(collaborationEnabled: boolean): NeutralTool[] {
     {
       name: "create_routine",
       description:
-        "Schedule repeating work on YOUR computer. Interval is in minutes. Prefer after a skill is proven. The routine posts in your chat when it runs.",
+        'Schedule repeating work on YOUR computer. Prefer a natural schedule: "every morning", "every evening", "every weekday at 8 AM", "every 30 minutes until 4 AM". The routine posts in your chat when it runs.',
       parameters: {
         name: { type: "string", description: "Routine name" },
         prompt: { type: "string", description: "What to do each run (or extra input if a skill is named)" },
-        intervalMinutes: { type: "number", description: "Minutes between runs (minimum 1)" },
+        schedule: {
+          type: "string",
+          description: 'When to run, e.g. "every morning", "every evening", "weekdays at 8am", "every 30 minutes until 4 AM"',
+        },
+        intervalMinutes: { type: "number", description: "Fallback: minutes between runs if schedule is omitted" },
         skillName: { type: "string", description: "Optional existing skill to run" },
       },
-      required: ["name", "prompt", "intervalMinutes"],
+      required: ["name", "prompt"],
     },
     {
       name: "send_message",
@@ -147,7 +151,8 @@ export function parseCustomToolCall(id: string, name: string, args: Record<strin
         tool: "create_routine",
         name: String(args.name ?? ""),
         prompt: String(args.prompt ?? ""),
-        intervalMinutes: Number(args.intervalMinutes ?? 60),
+        intervalMinutes: args.intervalMinutes !== undefined ? Number(args.intervalMinutes) : undefined,
+        schedule: args.schedule ? String(args.schedule) : undefined,
         skillName: args.skillName ? String(args.skillName) : undefined,
       };
     case "send_message":

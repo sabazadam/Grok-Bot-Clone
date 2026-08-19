@@ -1,4 +1,5 @@
 /** Persistent domain entities shared between server and web UI. */
+import type { RoutineSchedule } from "./schedule.js";
 
 export type Provider = "anthropic" | "openai" | "google" | "generic";
 
@@ -149,8 +150,8 @@ export interface AgentSkill {
 
 /**
  * Scheduled run of a prompt (optionally a skill) on one owning agent.
- * Interval-based — good enough for local use; official Grok Bot also has
- * weekday clocks and event triggers.
+ * `schedule` is a clock expression (every morning, weekdays at 8 AM,
+ * every 30 minutes until 4 AM). Event triggers (Slack/GitHub) are not implemented.
  */
 export interface Routine {
   id: string;
@@ -159,6 +160,9 @@ export interface Routine {
   name: string;
   prompt: string;
   intervalMinutes: number;
+  schedule?: RoutineSchedule;
+  scheduleLabel?: string;
+  timezone: string;
   enabled: boolean;
   nextRunAt: number;
   lastRunAt?: number;

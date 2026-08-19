@@ -16,7 +16,7 @@ export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClos
   const [newSkillBody, setNewSkillBody] = useState("");
   const [newRoutineName, setNewRoutineName] = useState("");
   const [newRoutinePrompt, setNewRoutinePrompt] = useState("");
-  const [newRoutineMins, setNewRoutineMins] = useState("60");
+  const [newRoutineSchedule, setNewRoutineSchedule] = useState("every morning");
 
   async function reloadExtras() {
     const [s, r] = await Promise.all([api.agentSkills(agent.id), api.routines(agent.id)]);
@@ -151,7 +151,7 @@ export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClos
 
         <h3 className="mb-1 text-xs font-semibold tracking-wide uppercase" style={{ color: "var(--muted)" }}>Routines</h3>
         <p className="mb-2 text-[11px]" style={{ color: "var(--muted)" }}>
-          Repeating work on this agent’s computer. Test run does real work.
+          Repeating work on this agent’s computer. Examples: every morning, every evening, weekdays at 8am, every 30 minutes until 4 AM. Test run does real work.
         </p>
         <div className="mb-3 space-y-1.5">
           {routines.length === 0 && <p className="text-xs" style={{ color: "var(--muted)" }}>None scheduled.</p>}
@@ -159,9 +159,13 @@ export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClos
             <div key={r.id} className="rounded-lg px-3 py-2 text-xs" style={card}>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-semibold" style={{ color: "var(--text)" }}>{r.name}</span>
-                <span style={{ color: "var(--muted)" }}>every {r.intervalMinutes}m</span>
+                <span style={{ color: "var(--muted)" }}>{r.scheduleLabel || `every ${r.intervalMinutes}m`}</span>
               </div>
               <p className="mt-1" style={{ color: "var(--text)" }}>{r.prompt}</p>
+              <p className="mt-0.5" style={{ color: "var(--muted)" }}>
+                next {new Date(r.nextRunAt).toLocaleString()}
+                {r.timezone ? ` · ${r.timezone}` : ""}
+              </p>
               <div className="mt-1.5 flex gap-2">
                 <button
                   onClick={async () => {
@@ -209,20 +213,20 @@ export function ProfileDrawer({ agent, onClose, onEdit }: { agent: Agent; onClos
           />
           <div className="flex items-center gap-2">
             <input
-              value={newRoutineMins}
-              onChange={(e) => setNewRoutineMins(e.target.value)}
-              className="w-16 rounded-lg px-2 py-1.5 text-xs"
+              value={newRoutineSchedule}
+              onChange={(e) => setNewRoutineSchedule(e.target.value)}
+              placeholder="every morning"
+              className="min-w-0 flex-1 rounded-lg px-2 py-1.5 text-xs"
               style={card}
             />
-            <span className="text-xs" style={{ color: "var(--muted)" }}>minutes</span>
             <button
-              disabled={!newRoutineName.trim() || !newRoutinePrompt.trim()}
+              disabled={!newRoutineName.trim() || !newRoutinePrompt.trim() || !newRoutineSchedule.trim()}
               onClick={async () => {
                 await api.createRoutine({
                   agentId: agent.id,
                   name: newRoutineName.trim(),
                   prompt: newRoutinePrompt.trim(),
-                  intervalMinutes: Math.max(1, Number(newRoutineMins) || 60),
+                  schedule: newRoutineSchedule.trim(),
                 });
                 setNewRoutineName("");
                 setNewRoutinePrompt("");

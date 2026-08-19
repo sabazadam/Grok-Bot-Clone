@@ -100,6 +100,8 @@ CREATE TABLE IF NOT EXISTS routines (
   name TEXT NOT NULL,
   prompt TEXT NOT NULL,
   interval_minutes INTEGER NOT NULL,
+  schedule_json TEXT,
+  timezone TEXT NOT NULL DEFAULT 'America/New_York',
   enabled INTEGER NOT NULL DEFAULT 1,
   next_run_at INTEGER NOT NULL,
   last_run_at INTEGER,
@@ -133,6 +135,13 @@ function migrate(d: Database.Database): void {
   }
   if (!cols.has("is_team_lead")) {
     d.exec(`ALTER TABLE agents ADD COLUMN is_team_lead INTEGER NOT NULL DEFAULT 0`);
+  }
+  const routineCols = new Set((d.prepare(`PRAGMA table_info(routines)`).all() as { name: string }[]).map((c) => c.name));
+  if (routineCols.size > 0 && !routineCols.has("schedule_json")) {
+    d.exec(`ALTER TABLE routines ADD COLUMN schedule_json TEXT`);
+  }
+  if (routineCols.size > 0 && !routineCols.has("timezone")) {
+    d.exec(`ALTER TABLE routines ADD COLUMN timezone TEXT NOT NULL DEFAULT 'America/New_York'`);
   }
 }
 

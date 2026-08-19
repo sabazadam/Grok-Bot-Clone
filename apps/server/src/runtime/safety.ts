@@ -74,7 +74,7 @@ export function describeExactAction(inv: ToolInvocation): string {
     case "create_agent":
       return `Create teammate ${inv.name}`;
     case "create_routine":
-      return `Schedule “${inv.name}” every ${inv.intervalMinutes}m`;
+      return `Schedule “${inv.name}”${inv.schedule ? ` (${inv.schedule})` : inv.intervalMinutes ? ` every ${inv.intervalMinutes}m` : ""}`;
     case "send_message":
       return `Message the conversation: "${inv.text}"`;
     case "send_message_to_agent":

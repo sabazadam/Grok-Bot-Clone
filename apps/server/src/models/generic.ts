@@ -25,7 +25,7 @@ You control the computer by replying with EXACTLY ONE JSON object per turn — n
 {"thought":"...","request_approval":{"description":"...","reason":"..."}}
 {"thought":"...","save_skill":{"name":"...","description":"...","instructions":"..."}}
 {"thought":"...","create_agent":{"name":"...","roleTitle":"...","instructions":"...","isTeamLead":false}}
-{"thought":"...","create_routine":{"name":"...","prompt":"...","intervalMinutes":60,"skillName":"optional"}}
+{"thought":"...","create_routine":{"name":"...","prompt":"...","schedule":"every morning","skillName":"optional"}}
 {"thought":"...","send_message":{"text":"..."}}                         // only when the user needs to know something now
 {"thought":"...","send_message_to_agent":{"toAgentName":"Name","text":"..."}}
 {"done":true,"message":"your final reply to the requester"}             // use {"done":true,"message":"ACK"} if no reply is needed
@@ -184,7 +184,8 @@ export class GenericAdapter implements ModelAdapter {
         tool: "create_routine",
         name: String(r.name ?? ""),
         prompt: String(r.prompt ?? ""),
-        intervalMinutes: Number(r.intervalMinutes ?? 60),
+        intervalMinutes: r.intervalMinutes !== undefined ? Number(r.intervalMinutes) : undefined,
+        schedule: r.schedule ? String(r.schedule) : undefined,
         skillName: r.skillName ? String(r.skillName) : undefined,
       };
     } else if (obj.send_message && typeof obj.send_message === "object") {

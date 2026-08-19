@@ -14,10 +14,13 @@ import type {
   MessageSender,
   Provider,
   Routine,
+  RoutineSchedule,
   Skill,
   Task,
   TaskStatus,
 } from "@grokbot/shared";
+import { formatSchedule, intervalMinutesOf, nextRunAt, parseSchedule, withWindowStart } from "@grokbot/shared";
+import { config } from "./config.js";
 import { getDb } from "./db.js";
 
 // ── mappers ─────────────────────────────────────────────────────────────
@@ -504,7 +507,19 @@ export function copyAgentSkills(fromAgentId: string, toAgentId: string): void {
 
 // ── routines ────────────────────────────────────────────────────────────
 
+function parseStoredSchedule(raw: unknown, intervalMinutes: number): RoutineSchedule {
+  if (typeof raw === "string" && raw.trim()) {
+    try {
+      return JSON.parse(raw) as RoutineSchedule;
+    } catch {
+      /* fall through */
+    }
+  }
+  return { kind: "interval", everyMinutes: intervalMinutes || 60 };
+}
+
 function rowToRoutine(r: any): Routine {
+  const schedule = parseStoredSchedule(r.schedule_json, r.interval_minutes);
   return {
     id: r.id,
     agentId: r.agent_id,
@@ -512,6 +527,9 @@ function rowToRoutine(r: any): Routine {
     name: r.name,
     prompt: r.prompt,
     intervalMinutes: r.interval_minutes,
+    schedule,
+    scheduleLabel: formatSchedule(schedule),
+    timezone: r.timezone || config.browserTimezone,
     enabled: !!r.enabled,
     nextRunAt: r.next_run_at,
     lastRunAt: r.last_run_at ?? undefined,
@@ -520,22 +538,64 @@ function rowToRoutine(r: any): Routine {
   };
 }
 
+export function resolveRoutineSchedule(input: {
+  schedule?: RoutineSchedule | string;
+  intervalMinutes?: number;
+  now?: number;
+  timeZone?: string;
+}): { schedule: RoutineSchedule; timezone: string; nextRunAt: number; intervalMinutes: number } {
+  const timezone = input.timeZone || config.browserTimezone;
+  const now = input.now ?? Date.now();
+  let schedule: RoutineSchedule | undefined;
+  if (typeof input.schedule === "string") schedule = parseSchedule(input.schedule);
+  else if (input.schedule) schedule = input.schedule;
+  if (!schedule && input.intervalMinutes) {
+    schedule = { kind: "interval", everyMinutes: Math.max(1, Math.round(input.intervalMinutes)) };
+  }
+  if (!schedule) throw new Error('Need a schedule like "every morning" or "every 30 minutes until 4 AM"');
+  schedule = withWindowStart(schedule, now, timezone);
+  return {
+    schedule,
+    timezone,
+    nextRunAt: nextRunAt(schedule, now, timezone),
+    intervalMinutes: intervalMinutesOf(schedule),
+  };
+}
+
 export function createRoutine(input: {
   agentId: string;
   skillId?: string;
   name: string;
   prompt: string;
-  intervalMinutes: number;
+  intervalMinutes?: number;
+  schedule?: RoutineSchedule | string;
+  timezone?: string;
 }): Routine {
   const id = nanoid(10);
   const now = Date.now();
-  const interval = Math.max(1, Math.round(input.intervalMinutes));
+  const resolved = resolveRoutineSchedule({
+    schedule: input.schedule,
+    intervalMinutes: input.intervalMinutes,
+    now,
+    timeZone: input.timezone,
+  });
   getDb()
     .prepare(
-      `INSERT INTO routines (id, agent_id, skill_id, name, prompt, interval_minutes, enabled, next_run_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      `INSERT INTO routines (id, agent_id, skill_id, name, prompt, interval_minutes, schedule_json, timezone, enabled, next_run_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
     )
-    .run(id, input.agentId, input.skillId ?? null, input.name.trim(), input.prompt.trim(), interval, now + interval * 60_000, now);
+    .run(
+      id,
+      input.agentId,
+      input.skillId ?? null,
+      input.name.trim(),
+      input.prompt.trim(),
+      resolved.intervalMinutes,
+      JSON.stringify(resolved.schedule),
+      resolved.timezone,
+      resolved.nextRunAt,
+      now,
+    );
   return getRoutine(id)!;
 }
 
@@ -553,22 +613,39 @@ export function listRoutines(agentId?: string): Routine[] {
 
 export function updateRoutine(
   id: string,
-  patch: Partial<Pick<Routine, "name" | "prompt" | "intervalMinutes" | "enabled" | "skillId" | "nextRunAt" | "lastRunAt" | "lastStatus">>,
+  patch: Partial<Pick<Routine, "name" | "prompt" | "intervalMinutes" | "enabled" | "skillId" | "nextRunAt" | "lastRunAt" | "lastStatus" | "timezone">> & {
+    schedule?: RoutineSchedule | string;
+  },
 ): Routine | undefined {
   const cur = getRoutine(id);
   if (!cur) return undefined;
-  const interval = patch.intervalMinutes ?? cur.intervalMinutes;
+  let schedule = cur.schedule ?? { kind: "interval" as const, everyMinutes: cur.intervalMinutes };
+  let timezone = patch.timezone ?? cur.timezone;
+  let next = patch.nextRunAt ?? cur.nextRunAt;
+  if (patch.schedule !== undefined || patch.intervalMinutes !== undefined) {
+    const resolved = resolveRoutineSchedule({
+      schedule: patch.schedule ?? schedule,
+      intervalMinutes: patch.intervalMinutes,
+      now: Date.now(),
+      timeZone: timezone,
+    });
+    schedule = resolved.schedule;
+    timezone = resolved.timezone;
+    next = resolved.nextRunAt;
+  }
   getDb()
     .prepare(
-      `UPDATE routines SET name=?, prompt=?, interval_minutes=?, enabled=?, skill_id=?, next_run_at=?, last_run_at=?, last_status=? WHERE id=?`,
+      `UPDATE routines SET name=?, prompt=?, interval_minutes=?, schedule_json=?, timezone=?, enabled=?, skill_id=?, next_run_at=?, last_run_at=?, last_status=? WHERE id=?`,
     )
     .run(
       patch.name ?? cur.name,
       patch.prompt ?? cur.prompt,
-      interval,
+      intervalMinutesOf(schedule),
+      JSON.stringify(schedule),
+      timezone,
       (patch.enabled ?? cur.enabled) ? 1 : 0,
       patch.skillId === undefined ? (cur.skillId ?? null) : patch.skillId,
-      patch.nextRunAt ?? cur.nextRunAt,
+      next,
       patch.lastRunAt ?? cur.lastRunAt ?? null,
       patch.lastStatus ?? cur.lastStatus ?? null,
       id,
@@ -591,9 +668,10 @@ export function markRoutineRan(id: string, status: "ok" | "failed" | "running"):
   const cur = getRoutine(id);
   if (!cur) return undefined;
   const now = Date.now();
+  const schedule = cur.schedule ?? { kind: "interval" as const, everyMinutes: cur.intervalMinutes };
   return updateRoutine(id, {
     lastRunAt: now,
     lastStatus: status,
-    nextRunAt: now + Math.max(1, cur.intervalMinutes) * 60_000,
+    nextRunAt: nextRunAt(schedule, now, cur.timezone || config.browserTimezone),
   });
 }

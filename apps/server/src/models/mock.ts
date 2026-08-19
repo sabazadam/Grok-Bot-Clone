@@ -68,13 +68,13 @@ export class MockAdapter implements ModelAdapter {
           roleTitle: m[2]!.trim(),
           instructions: m[3]!,
         });
-      } else if ((m = line.match(/^schedule every (\d+) min:\s*(.+)$/i))) {
+      } else if ((m = line.match(/^schedule (.+):\s*(.+)$/i))) {
         this.queue.push({
           id: this.id(),
           tool: "create_routine",
           name: "Scheduled",
           prompt: m[2]!,
-          intervalMinutes: Number(m[1]),
+          schedule: m[1]!,
         });
       } else if ((m = line.match(/open the browser to (\S+)/i))) {
         this.queue.push({

@@ -202,19 +202,25 @@ export async function executeInvocation(
       if (existing.length >= 50) {
         return { outcome: { id: inv.id, tool: inv.tool, output: "this agent already has 50 routines", isError: true } };
       }
-      const routine = store.createRoutine({
-        agentId: agent.id,
-        skillId,
-        name,
-        prompt: inv.prompt.trim(),
-        intervalMinutes: inv.intervalMinutes,
-      });
+      let routine;
+      try {
+        routine = store.createRoutine({
+          agentId: agent.id,
+          skillId,
+          name,
+          prompt: inv.prompt.trim(),
+          intervalMinutes: inv.intervalMinutes,
+          schedule: inv.schedule,
+        });
+      } catch (err) {
+        return { outcome: { id: inv.id, tool: inv.tool, output: (err as Error).message, isError: true } };
+      }
       broadcast({ type: "routine_updated", routine });
       return {
         outcome: {
           id: inv.id,
           tool: inv.tool,
-          output: `scheduled "${routine.name}" every ${routine.intervalMinutes} minute(s); next run ${new Date(routine.nextRunAt).toISOString()}`,
+          output: `scheduled "${routine.name}" (${routine.scheduleLabel}); next run ${new Date(routine.nextRunAt).toISOString()}`,
         },
       };
     }

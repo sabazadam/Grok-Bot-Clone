@@ -54,7 +54,7 @@ npm run dev
 
 - Mark one agent **Team lead** so unmentioned group messages go to them; they delegate with `@Name` or `send_message_to_agent`. `@everyone` wakes the whole group.
 - Save a **skill** in Profile (or ask the agent to `save_skill`). Type `/Skill name` in chat to run it. Enable per agent.
-- Add a **routine** (interval + prompt) on an agent; **Test run** does real work. Type **Stop now** or use the Stop button to cancel in-progress work — a new message takes priority.
+- Add a **routine** with a clock phrase (`every morning`, `every evening`, `weekdays at 8am`, `every 30 minutes until 4 AM`); **Test run** does real work. Type **Stop now** or use the Stop button to cancel in-progress work — a new message takes priority.
 
 `scripts/setup.sh` asks **how you'll use GrokBot** (see below). Health check anytime: `node scripts/doctor.mjs`
 
@@ -134,6 +134,22 @@ Node server (Fastify + SQLite)
   browser sessions survive in the agent's volume. `MAX_RUNNING_COMPUTERS` (default 4) caps
   concurrency — each agent OS uses roughly 1–2 GB RAM.
 
+### What this is (and is not)
+
+GrokBot is **our own code**. It is not Hermes, LangChain, DeepAgents, or xAI's hosted Grok Bot.
+The loop is: screenshot → call a model API → run the action on a Docker desktop → repeat.
+The "agent" is this repo plus whatever **HTTP model API** you point it at.
+
+A ChatGPT / SuperGrok **consumer subscription is not an API key**. Hermes logs into those
+products with a browser OAuth device-code flow and spends subscription quota. This app talks
+to the public APIs (`api.openai.com`, `api.x.ai`) with `OPENAI_API_KEY` / `XAI_API_KEY`.
+Those are separate products. SuperGrok $30 chat ≠ an xAI developer key.
+
+To run without your own developer key today: use `mock-scripted`, or put a real API key
+(or any OpenAI-compatible key, e.g. OpenRouter) in `.env`. Subscription OAuth like Hermes
+is not implemented — adding it means a device-code login, token refresh, and a new provider
+id; xAI has also been seen to 403 some SuperGrok tiers on that OAuth surface.
+
 ## Configuration
 
 Copy `.env.example` → `.env`. Notable settings:
@@ -174,7 +190,7 @@ Repo layout: `apps/server` (Fastify API + runtime), `apps/web` (React UI),
 | Hosting | xAI cloud | your machine |
 | Reporting | finish the job; come back for a result, blocker, or approval | same policy: sandbox actions stay on Agent Computer; chat is `send_message` / `task_complete` / approvals only |
 | Skills | `/` menu, save after a working process | yes — `/Name` in chat, Profile toggle, `save_skill` tool |
-| Routines | schedule / event trigger, test run | interval routines + test run (no Slack/GitHub event triggers yet) |
+| Routines | schedule / event trigger, test run | clock phrases (`every morning`, `until 4 AM`, weekdays) + test run. No Slack/GitHub event triggers yet |
 | Team lead / coordinator | a Bot owns unmentioned group work and delegates | yes — Team lead checkbox, `@Name` / `@everyone` |
 | Mid-task redirect / Stop now | new user message takes priority; “Stop now” cancels | yes |
 | Create a focused Bot | existing Bots can spawn a specialist | yes — `create_agent` |

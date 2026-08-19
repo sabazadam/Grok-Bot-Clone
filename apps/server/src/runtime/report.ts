@@ -66,7 +66,7 @@ export function communicationCaption(inv: ToolInvocation): string | undefined {
     case "create_agent":
       return `Created teammate @${inv.name}${inv.roleTitle ? ` (${inv.roleTitle})` : ""}.`;
     case "create_routine":
-      return `Scheduled “${inv.name}” every ${inv.intervalMinutes} minute(s).`;
+      return `Scheduled “${inv.name}”${inv.schedule ? ` (${inv.schedule})` : ""}.`;
     default:
       return undefined;
   }
