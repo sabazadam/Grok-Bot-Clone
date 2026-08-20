@@ -6,6 +6,8 @@
  *   - a named volume for /home/agent (files, browser sessions survive restarts)
  *   - noVNC (live desktop view) and the actuator API published on 127.0.0.1
  *     with dynamically assigned host ports
+ *   - a private Docker network so one agent cannot reach another's actuator
+ *     (:8090) or noVNC (:6080) on the default bridge
  */
 import Docker from "dockerode";
 import { spawn } from "node:child_process";
@@ -35,6 +37,17 @@ function parseMemory(s: string): number {
 
 const CONTAINER_PREFIX = "agentos-";
 const VOLUME_SUFFIX = "-home";
+const NETWORK_PREFIX = `${CONTAINER_PREFIX}net-`;
+
+export function networkNameFor(agentId: string): string {
+  return `${NETWORK_PREFIX}${agentId}`;
+}
+
+export function agentIdFromNetworkName(name: string): string | undefined {
+  if (!name.startsWith(NETWORK_PREFIX)) return undefined;
+  const id = name.slice(NETWORK_PREFIX.length);
+  return id || undefined;
+}
 
 export class ComputerManager {
   private docker: Docker;
@@ -50,6 +63,9 @@ export class ComputerManager {
   }
   volumeName(agentId: string): string {
     return `${CONTAINER_PREFIX}${agentId}${VOLUME_SUFFIX}`;
+  }
+  networkName(agentId: string): string {
+    return networkNameFor(agentId);
   }
 
   async dockerAvailable(): Promise<boolean> {
@@ -142,9 +158,65 @@ export class ComputerManager {
       if (known.has(agentId)) continue;
       await this.docker.getContainer(c.Id).remove({ force: true }).catch(() => undefined);
       await this.docker.getVolume(this.volumeName(agentId)).remove().catch(() => undefined);
+      await this.docker.getNetwork(this.networkName(agentId)).remove().catch(() => undefined);
       removed.push(agentId);
     }
+    await this.reapOrphanNetworks(known);
     return removed;
+  }
+
+  /** Drop leftover per-agent networks after a container was already removed. */
+  private async reapOrphanNetworks(knownAgentIds: Set<string>): Promise<void> {
+    const nets = await this.docker.listNetworks().catch(() => []);
+    for (const n of nets) {
+      const agentId = agentIdFromNetworkName(n.Name ?? "");
+      if (!agentId || knownAgentIds.has(agentId)) continue;
+      await this.docker.getNetwork(n.Id).remove().catch(() => undefined);
+    }
+  }
+
+  private async ensureNetwork(agentId: string): Promise<string> {
+    const name = this.networkName(agentId);
+    try {
+      await this.docker.getNetwork(name).inspect();
+      return name;
+    } catch {
+      /* create below */
+    }
+    try {
+      await this.docker.createNetwork({
+        Name: name,
+        CheckDuplicate: true,
+        Driver: "bridge",
+        Labels: { "grokbot.agent-id": agentId },
+      });
+    } catch (err: unknown) {
+      const status = (err as { statusCode?: number }).statusCode;
+      if (status !== 409) throw err;
+    }
+    return name;
+  }
+
+  /**
+   * Keep each desktop on its own bridge. The in-container actuator and noVNC
+   * listen on 0.0.0.0, so teammates on the default Docker network could otherwise
+   * drive each other's mouse/keyboard or shell.
+   */
+  async isolateNetwork(agentId: string): Promise<void> {
+    const netName = await this.ensureNetwork(agentId);
+    const c = this.docker.getContainer(this.containerName(agentId));
+    const info = await c.inspect();
+    const nets = info.NetworkSettings.Networks ?? {};
+    if (!nets[netName]) {
+      await this.docker.getNetwork(netName).connect({ Container: info.Id });
+    }
+    for (const name of Object.keys(nets)) {
+      if (name === netName) continue;
+      await this.docker
+        .getNetwork(name)
+        .disconnect({ Container: info.Id, Force: true })
+        .catch(() => undefined);
+    }
   }
 
   async runningCount(): Promise<number> {
@@ -174,6 +246,7 @@ export class ComputerManager {
         );
       }
       await this.docker.createVolume({ Name: this.volumeName(agentId) }).catch(() => undefined);
+      const network = await this.ensureNetwork(agentId);
       await this.docker.createContainer({
         name: this.containerName(agentId),
         Image: config.agentDesktopImage,
@@ -184,6 +257,7 @@ export class ComputerManager {
           NanoCpus: 2_000_000_000,
           ShmSize: 512 * 1024 ** 2,
           Binds: [`${this.volumeName(agentId)}:/home/agent`],
+          NetworkMode: network,
           PortBindings: {
             // noVNC (live desktop) — reachable per the access mode (loopback locally, or
             // a Tailscale IP / 0.0.0.0 for server/commander use).
@@ -207,6 +281,9 @@ export class ComputerManager {
       await this.docker.getContainer(this.containerName(agentId)).start();
       info = await this.status(agentId);
     }
+
+    await this.isolateNetwork(agentId).catch(() => undefined);
+    info = await this.status(agentId);
 
     await this.waitHealthy(agentId, info);
     this.touch(agentId);
@@ -257,6 +334,7 @@ export class ComputerManager {
     if (removeData) {
       await this.docker.getVolume(this.volumeName(agentId)).remove().catch(() => undefined);
     }
+    await this.docker.getNetwork(this.networkName(agentId)).remove().catch(() => undefined);
     this.lastUsed.delete(agentId);
   }
 
