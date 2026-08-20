@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { useTestDb } from "../db.js";
-import { extractMentions, newTurnBudget, consumeTurn } from "./orchestrator.js";
+import { extractMentions, newTurnBudget, consumeTurn, clearTurnBudgets } from "./orchestrator.js";
 
 beforeEach(() => {
   useTestDb();
+  clearTurnBudgets();
 });
 
 describe("extractMentions", () => {
@@ -43,5 +44,18 @@ describe("turn budget", () => {
 
   it("allows a single turn for untracked roots (post-restart)", () => {
     expect(consumeTurn("unknown-root")).toBe(true);
+    expect(consumeTurn("unknown-root")).toBe(false);
+  });
+
+  it("does not unlock unlimited hops after the budget map evicts a root", () => {
+    newTurnBudget("keep-me");
+    for (let i = 0; i < 8; i++) expect(consumeTurn("keep-me")).toBe(true);
+    expect(consumeTurn("keep-me")).toBe(false);
+
+    for (let i = 0; i < 200; i++) newTurnBudget(`flood-${i}`);
+    // keep-me was the oldest entry and has been dropped. One courtesy hop,
+    // then the chain must stop — not run forever.
+    expect(consumeTurn("keep-me")).toBe(true);
+    expect(consumeTurn("keep-me")).toBe(false);
   });
 });
