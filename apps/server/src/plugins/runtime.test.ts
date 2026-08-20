@@ -51,4 +51,14 @@ describe("pluginCatalog", () => {
     expect(catalog).toMatch(/call_plugin/);
     expect(catalog).toMatch(/Status hook/);
   });
+
+  it("stops listing plugins once the task is cancelled", async () => {
+    store.createPlugin({ name: "First", kind: "webhook", url: "https://example.test/a" });
+    store.createPlugin({ name: "Second", kind: "webhook", url: "https://example.test/b" });
+    const c = new AbortController();
+    c.abort();
+    const catalog = await pluginCatalog(c.signal);
+    expect(catalog).not.toMatch(/First/);
+    expect(catalog).not.toMatch(/Second/);
+  });
 });

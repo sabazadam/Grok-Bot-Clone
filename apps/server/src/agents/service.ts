@@ -6,15 +6,19 @@ import { config } from "../config.js";
 import { broadcast } from "../bus.js";
 
 /** Push an agent's browser settings into its running container. */
-export async function syncBrowserConfig(agentId: string): Promise<void> {
+export async function syncBrowserConfig(agentId: string, signal?: AbortSignal): Promise<void> {
   const agent = store.getAgent(agentId);
   if (!agent) return;
-  await computerManager.syncBrowserConfig(agentId, {
-    stealth: agent.stealthBrowsing,
-    userAgent: config.browserUserAgent,
-    timezone: config.browserTimezone,
-    locale: config.browserLocale,
-  });
+  await computerManager.syncBrowserConfig(
+    agentId,
+    {
+      stealth: agent.stealthBrowsing,
+      userAgent: config.browserUserAgent,
+      timezone: config.browserTimezone,
+      locale: config.browserLocale,
+    },
+    signal,
+  );
 }
 
 export async function agentWithComputer(agent: Agent): Promise<Agent> {

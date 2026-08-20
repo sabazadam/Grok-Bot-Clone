@@ -8,6 +8,14 @@ export function registerTask(taskId: string, agentId: string): AbortSignal {
   return c.signal;
 }
 
+/** Throw AbortError so setup (boot / browse / plugins) stops as soon as Stop fires. */
+export function assertNotAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  const err = new Error("The operation was aborted");
+  err.name = "AbortError";
+  throw err;
+}
+
 export function unregisterTask(taskId: string): void {
   controllers.delete(taskId);
 }

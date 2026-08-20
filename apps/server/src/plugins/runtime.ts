@@ -2,11 +2,12 @@ import type { Plugin } from "@grokbot/shared";
 import * as store from "../store.js";
 import { closeMcp, mcpFor } from "./mcp.js";
 
-export async function pluginCatalog(): Promise<string> {
+export async function pluginCatalog(signal?: AbortSignal): Promise<string> {
   const plugins = store.listPlugins().filter((p) => p.enabled);
   if (plugins.length === 0) return "";
   const lines: string[] = ["## Plugins / connectors", "You can call configured plugins with call_plugin."];
   for (const p of plugins) {
+    if (signal?.aborted) break;
     if (p.kind === "webhook") {
       lines.push(`- ${p.name} (webhook id=${p.id}) — POST JSON {tool, arguments} to the configured URL`);
       continue;
