@@ -41,18 +41,35 @@ export { extractMentions } from "./dispatch.js";
 
 /** taskId chain accounting: how many agent turns a root user message has caused */
 const turnBudgets = new Map<string, { used: number }>();
+const TURN_BUDGET_CAP = 200;
+
+function evictOldestTurnBudget(): void {
+  if (turnBudgets.size <= TURN_BUDGET_CAP) return;
+  const first = turnBudgets.keys().next().value;
+  if (first) turnBudgets.delete(first);
+}
+
+/** @internal test helper */
+export function clearTurnBudgets(): void {
+  turnBudgets.clear();
+}
 
 export function newTurnBudget(rootId: string): void {
   turnBudgets.set(rootId, { used: 0 });
-  if (turnBudgets.size > 200) {
-    const first = turnBudgets.keys().next().value;
-    if (first) turnBudgets.delete(first);
-  }
+  evictOldestTurnBudget();
 }
 
 export function consumeTurn(rootId: string): boolean {
-  const b = turnBudgets.get(rootId);
-  if (!b) return true;
+  let b = turnBudgets.get(rootId);
+  if (!b) {
+    // Missing budget (process restart or LRU eviction). The previous
+    // implementation returned true without recording the hop, so every
+    // later send_message_to_agent / @mention also succeeded — unbounded
+    // agent ping-pong and API spend. Allow one courtesy hop, then stop.
+    b = { used: Math.max(0, config.maxAgentTurns - 1) };
+    turnBudgets.set(rootId, b);
+    evictOldestTurnBudget();
+  }
   if (b.used >= config.maxAgentTurns) return false;
   b.used += 1;
   return true;
