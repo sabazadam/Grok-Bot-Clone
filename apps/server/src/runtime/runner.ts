@@ -15,7 +15,7 @@ import { createAdapter, describeInvocation, type AgentDecision, type ToolOutcome
 import { buildSystemPrompt, buildTaskPrompt } from "./prompt.js";
 import { evaluateInvocation, describeExactAction } from "./safety.js";
 import { requestApproval } from "./approvals.js";
-import { registerTask, unregisterTask } from "./cancel.js";
+import { assertNotAborted, registerTask, unregisterTask } from "./cancel.js";
 import { waitWhileTakenOver } from "./takeover.js";
 import { executeInvocation } from "./tools.js";
 import { extractMentions, dispatchAgentMessage } from "./orchestrator.js";
@@ -59,38 +59,50 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
 
   try {
     await service.makeRoomForComputer(agent.id);
-    await computerManager.ensureRunning(agent.id);
-    await service.syncBrowserConfig(agent.id);
+    assertNotAborted(signal);
+    await computerManager.ensureRunning(agent.id, signal);
+    assertNotAborted(signal);
+    await service.syncBrowserConfig(agent.id, signal);
+    assertNotAborted(signal);
     const browseUrls = inferBrowseUrls(opts.prompt);
     const browseUrl = browseUrls[0];
     if (browseUrls.length) {
       try {
         for (const url of browseUrls) {
-          await computerManager.exec(agent.id, openBrowserCommand(url), 20);
+          assertNotAborted(signal);
+          await computerManager.exec(agent.id, openBrowserCommand(url), 20, signal);
         }
         const caption = `Opened ${browseUrls.join(" and ")}`;
         store.addTaskStep(task.id, 0, caption, JSON.stringify({ tool: "bash", command: "browser" }));
         broadcast({ type: "task_step", taskId: task.id, agentId: agent.id, stepIndex: 0, caption });
-      } catch {
+      } catch (err) {
+        if (signal.aborted) throw err;
         /* browser helper is best-effort; the model can still fetch via curl */
       }
     }
     if (opts.attachments?.length) {
       const { hostPathForAttachment } = await import("../uploads.js");
       for (const att of opts.attachments) {
+        assertNotAborted(signal);
         const host = hostPathForAttachment(att);
         if (host) {
           try {
             await computerManager.copyToWorkspace(agent.id, host, att.name);
-          } catch {
+          } catch (err) {
+            if (signal.aborted) throw err;
             /* inbox copy is best-effort */
           }
         }
       }
     }
+    assertNotAborted(signal);
     const firstShot = await computerManager.screenshot(agent.id);
     const { pluginCatalog } = await import("../plugins/runtime.js");
-    const extras = await pluginCatalog().catch(() => "");
+    const extras = await pluginCatalog(signal).catch((err) => {
+      if (signal.aborted) throw err;
+      return "";
+    });
+    assertNotAborted(signal);
     const adapter = createAdapter(agent, buildSystemPrompt(agent, extras));
     let decision: AgentDecision = await adapter.start(
       buildTaskPrompt(agent, conversation, opts, browseUrl ? { openedUrl: browseUrl } : undefined),
@@ -236,16 +248,21 @@ export async function runAgentTask(opts: RunTaskOptions): Promise<void> {
       decision = await adapter.next(outcomes);
     }
   } catch (err) {
-    failed = true;
-    finalText = "";
-    const msg = store.addMessage({
-      conversationId: conversation.id,
-      sender: { kind: "system" },
-      kind: "error",
-      text: `${agent.name}'s task failed: ${(err as Error).message}`,
-    });
-    broadcast({ type: "message", message: msg });
-    store.updateTask(task.id, { status: "failed", finishedAt: Date.now(), resultSummary: (err as Error).message.slice(0, 500) });
+    if (signal.aborted) {
+      finalText = "Task cancelled.";
+      store.updateTask(task.id, { status: "cancelled", finishedAt: Date.now() });
+    } else {
+      failed = true;
+      finalText = "";
+      const msg = store.addMessage({
+        conversationId: conversation.id,
+        sender: { kind: "system" },
+        kind: "error",
+        text: `${agent.name}'s task failed: ${(err as Error).message}`,
+      });
+      broadcast({ type: "message", message: msg });
+      store.updateTask(task.id, { status: "failed", finishedAt: Date.now(), resultSummary: (err as Error).message.slice(0, 500) });
+    }
   } finally {
     unregisterTask(task.id);
   }

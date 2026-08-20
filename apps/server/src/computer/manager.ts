@@ -158,7 +158,7 @@ export class ComputerManager {
    * Ensure the agent's computer exists and is running; returns its info.
    * Creates container + volume on first call. Waits for the actuator to be healthy.
    */
-  async ensureRunning(agentId: string): Promise<ComputerInfo> {
+  async ensureRunning(agentId: string, signal?: AbortSignal): Promise<ComputerInfo> {
     if (!(await this.imageAvailable())) {
       throw new Error(
         `Docker image "${config.agentDesktopImage}" not found. Build it with: npm run image:build`,
@@ -208,31 +208,26 @@ export class ComputerManager {
       info = await this.status(agentId);
     }
 
-    await this.waitHealthy(agentId, info);
+    await this.waitHealthy(agentId, info, 90_000, signal);
     this.touch(agentId);
     return info;
   }
 
-  private async waitHealthy(agentId: string, info: ComputerInfo, timeoutMs = 90_000): Promise<void> {
+  private async waitHealthy(
+    agentId: string,
+    info: ComputerInfo,
+    timeoutMs = 90_000,
+    signal?: AbortSignal,
+  ): Promise<void> {
     if (!info.actuatorPort) throw new Error("actuator port not assigned");
-    const url = `http://127.0.0.1:${info.actuatorPort}/health`;
-    const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
-      try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
-        if (res.ok) {
-          // also wait for X display to accept screenshots
-          const shot = await fetch(`http://127.0.0.1:${info.actuatorPort}/screenshot`, {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (shot.ok) return;
-        }
-      } catch {
-        /* not up yet */
-      }
-      await sleep(1500);
-    }
-    throw new Error(`agent computer for ${agentId} did not become healthy within ${timeoutMs / 1000}s`);
+    await waitForHealth(
+      `http://127.0.0.1:${info.actuatorPort}/health`,
+      `http://127.0.0.1:${info.actuatorPort}/screenshot`,
+      timeoutMs,
+      signal,
+      fetch,
+      `agent computer for ${agentId}`,
+    );
   }
 
   async stop(agentId: string): Promise<void> {
@@ -302,6 +297,7 @@ export class ComputerManager {
   async syncBrowserConfig(
     agentId: string,
     opts: { stealth: boolean; userAgent: string; timezone: string; locale: string },
+    signal?: AbortSignal,
   ): Promise<void> {
     const esc = (s: string) => s.replace(/'/g, "'\\''");
     const content = [
@@ -312,8 +308,9 @@ export class ComputerManager {
     ].join("\n");
     const cmd = `mkdir -p ~/.config/grokbot && cat > ~/.config/grokbot/browser.env <<'GBEOF'\n${content}\nGBEOF`;
     try {
-      await this.exec(agentId, cmd, 15);
-    } catch {
+      await this.exec(agentId, cmd, 15, signal);
+    } catch (err) {
+      if (signal?.aborted) throw err;
       /* best-effort; wrapper falls back to stealth-on defaults */
     }
   }
@@ -386,6 +383,43 @@ export function pickEvictionVictim(
 }
 
 export const computerManager = new ComputerManager();
+
+/** Poll actuator health until it can screenshot, or the task is stopped. */
+export async function waitForHealth(
+  healthUrl: string,
+  screenshotUrl: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  fetchFn: typeof fetch = fetch,
+  label = "agent computer",
+): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (signal?.aborted) {
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      throw err;
+    }
+    try {
+      const res = await fetchFn(healthUrl, { signal: combineSignals(AbortSignal.timeout(3000), signal) });
+      if (res.ok) {
+        const shot = await fetchFn(screenshotUrl, {
+          signal: combineSignals(AbortSignal.timeout(5000), signal),
+        });
+        if (shot.ok) return;
+      }
+    } catch (err) {
+      if (signal?.aborted) throw err;
+    }
+    try {
+      await sleep(1500, undefined, signal ? { signal } : undefined);
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw err;
+    }
+  }
+  throw new Error(`${label} did not become healthy within ${timeoutMs / 1000}s`);
+}
 
 function combineSignals(...signals: (AbortSignal | undefined)[]): AbortSignal {
   const live = signals.filter((s): s is AbortSignal => !!s);
