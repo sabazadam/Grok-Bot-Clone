@@ -49,7 +49,7 @@ async function main() {
       );
       const stopped = await computerManager.stopIdle(active);
       for (const agentId of stopped) {
-        store.setAgentStatus(agentId, "off");
+        await service.announceComputerStopped(agentId);
       }
     }, 60_000).unref();
   }
