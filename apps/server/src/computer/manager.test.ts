@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { pickEvictionVictim } from "./manager.js";
+import { agentIdFromNetworkName, networkNameFor, pickEvictionVictim } from "./manager.js";
+
+describe("agent network names", () => {
+  it("uses a dedicated prefix so networks are not confused with containers", () => {
+    expect(networkNameFor("abc12")).toBe("agentos-net-abc12");
+    expect(agentIdFromNetworkName("agentos-net-abc12")).toBe("abc12");
+    expect(agentIdFromNetworkName("agentos-abc12")).toBeUndefined();
+    expect(agentIdFromNetworkName("bridge")).toBeUndefined();
+    expect(agentIdFromNetworkName("agentos-net-")).toBeUndefined();
+  });
+});
 
 describe("pickEvictionVictim", () => {
   it("skips protected agents and picks the least recently used", () => {
