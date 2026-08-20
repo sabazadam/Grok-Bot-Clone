@@ -591,6 +591,32 @@ export function listActiveTasksForAgent(agentId: string): Task[] {
     .map(rowToTask);
 }
 
+/**
+ * After a process restart nothing is actually running. Close leftover
+ * queued/running tasks, pending approvals, and "running" routines so
+ * reconcile does not resurrect a ghost working/waiting state.
+ */
+export function closeOrphanedWork(now = Date.now()): { tasks: number; approvals: number; routines: number } {
+  const db = getDb();
+  const tasks = (
+    db.prepare(`SELECT id FROM tasks WHERE status IN ('queued','running','waiting_approval')`).all() as { id: string }[]
+  ).map((r) => r.id);
+  const approvals = (db.prepare(`SELECT id FROM approvals WHERE status='pending'`).all() as { id: string }[]).map((r) => r.id);
+  for (const id of tasks) {
+    updateTask(id, { status: "cancelled", finishedAt: now, resultSummary: "orphaned after server restart" });
+  }
+  for (const id of approvals) {
+    resolveApproval(id, "rejected");
+  }
+  let routines = 0;
+  for (const routine of listRoutines()) {
+    if (routine.lastStatus !== "running") continue;
+    updateRoutine(routine.id, { lastStatus: "failed" });
+    routines += 1;
+  }
+  return { tasks: tasks.length, approvals: approvals.length, routines };
+}
+
 // ── skills ──────────────────────────────────────────────────────────────
 
 function rowToSkill(r: any): Skill {

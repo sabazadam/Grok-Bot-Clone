@@ -208,6 +208,10 @@ export class ComputerManager {
       info = await this.status(agentId);
     }
 
+    // Record activity before the health wait so a container that starts but
+    // never becomes healthy is visible to idle-stop / eviction (otherwise it
+    // holds a concurrency slot forever).
+    this.touch(agentId);
     await this.waitHealthy(agentId, info);
     this.touch(agentId);
     return info;
