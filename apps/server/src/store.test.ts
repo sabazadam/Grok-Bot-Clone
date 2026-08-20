@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useTestDb } from "./db.js";
+import { getDb, useTestDb } from "./db.js";
 import * as store from "./store.js";
 
 beforeEach(() => {
@@ -255,6 +255,37 @@ describe("agent store", () => {
     store.copyAgentRoutines(a.id, copy.id);
     expect(store.listRoutines(copy.id).map((r) => r.name)).toEqual(["Morning scan"]);
     expect(store.listRoutines(copy.id)[0]?.prompt).toBe("Check inbox");
+  });
+
+  it("dissolves a group that would drop below 2 members and cleans leftovers", () => {
+    const a = makeAgent({ name: "One" });
+    const b = makeAgent({ name: "Two" });
+    const c = makeAgent({ name: "Three" });
+    const pair = store.createConversation("group", "Pair", [a.id, b.id]);
+    const trio = store.createConversation("group", "Trio", [a.id, b.id, c.id]);
+    const direct = store.ensureDirectConversation(a.id);
+    const task = store.createTask(a.id, direct.id, "research");
+    store.addTaskStep(task.id, 1, "clicked", "{}", "/screenshots/x.png");
+    store.createApproval({
+      conversationId: direct.id,
+      agentId: a.id,
+      taskId: task.id,
+      actionJson: "{}",
+      actionDescription: "send email",
+      reason: "needs you",
+    });
+    store.deleteAgent(a.id);
+    expect(store.getAgent(a.id)).toBeUndefined();
+    expect(store.getConversation(pair.id)).toBeUndefined();
+    expect(store.getConversation(direct.id)).toBeUndefined();
+    expect(store.getConversation(trio.id)?.agentIds.sort()).toEqual([b.id, c.id].sort());
+    expect(store.listPendingApprovalsForAgent(a.id)).toHaveLength(0);
+    expect(store.getTask(task.id)).toBeUndefined();
+    const leftoverSteps = getDb()
+      .prepare(`SELECT COUNT(*) as n FROM task_steps WHERE task_id=?`)
+      .get(task.id) as { n: number };
+    expect(leftoverSteps.n).toBe(0);
+    expect(store.listActiveTasksForAgent(a.id)).toHaveLength(0);
   });
 
   it("counts the official 50-item roster", () => {

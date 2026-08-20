@@ -282,24 +282,30 @@ export function setAgentHidden(id: string, hidden: boolean): Agent | undefined {
 
 export function deleteAgent(id: string): void {
   const db = getDb();
-  db.prepare(`DELETE FROM agents WHERE id=?`).run(id);
-  // remove conversations that only involved this agent
-  const convs = db.prepare(`SELECT * FROM conversations`).all().map(rowToConversation);
-  for (const c of convs) {
-    if (c.agentIds.includes(id)) {
-      const remaining = c.agentIds.filter((a) => a !== id);
-      if (remaining.length === 0 || c.kind !== "group") {
-        db.prepare(`DELETE FROM messages WHERE conversation_id=?`).run(c.id);
-        db.prepare(`DELETE FROM conversations WHERE id=?`).run(c.id);
-      } else {
-        db.prepare(`UPDATE conversations SET agent_ids=? WHERE id=?`).run(JSON.stringify(remaining), c.id);
+  const run = db.transaction(() => {
+    db.prepare(`DELETE FROM task_steps WHERE task_id IN (SELECT id FROM tasks WHERE agent_id=?)`).run(id);
+    db.prepare(`DELETE FROM approvals WHERE agent_id=?`).run(id);
+    db.prepare(`DELETE FROM agents WHERE id=?`).run(id);
+    // remove conversations that only involved this agent; dissolve groups that
+    // would fall below the official 2-member floor
+    const convs = db.prepare(`SELECT * FROM conversations`).all().map(rowToConversation);
+    for (const c of convs) {
+      if (c.agentIds.includes(id)) {
+        const remaining = c.agentIds.filter((a) => a !== id);
+        if (remaining.length < GROUP_MEMBER_MIN || c.kind !== "group") {
+          db.prepare(`DELETE FROM messages WHERE conversation_id=?`).run(c.id);
+          db.prepare(`DELETE FROM conversations WHERE id=?`).run(c.id);
+        } else {
+          db.prepare(`UPDATE conversations SET agent_ids=? WHERE id=?`).run(JSON.stringify(remaining), c.id);
+        }
       }
     }
-  }
-  db.prepare(`DELETE FROM memories WHERE agent_id=?`).run(id);
-  db.prepare(`DELETE FROM tasks WHERE agent_id=?`).run(id);
-  db.prepare(`DELETE FROM agent_skills WHERE agent_id=?`).run(id);
-  db.prepare(`DELETE FROM routines WHERE agent_id=?`).run(id);
+    db.prepare(`DELETE FROM memories WHERE agent_id=?`).run(id);
+    db.prepare(`DELETE FROM tasks WHERE agent_id=?`).run(id);
+    db.prepare(`DELETE FROM agent_skills WHERE agent_id=?`).run(id);
+    db.prepare(`DELETE FROM routines WHERE agent_id=?`).run(id);
+  });
+  run();
 }
 
 // ── conversations ───────────────────────────────────────────────────────
