@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { evaluateInvocation } from "./safety.js";
+import { evaluateInvocation, isRecursiveRm } from "./safety.js";
 
 describe("safety rule engine", () => {
   it("flags destructive shell commands", () => {
@@ -9,11 +9,24 @@ describe("safety rule engine", () => {
     expect(evaluateInvocation({ id: "4", tool: "bash", command: "curl -X POST https://api.example.com -d 'x'" }).needsApproval).toBe(true);
   });
 
+  it("flags split-flag and long-option recursive deletes", () => {
+    expect(isRecursiveRm("rm -r -f /home/agent")).toBe(true);
+    expect(isRecursiveRm("rm -f -r /tmp/out")).toBe(true);
+    expect(isRecursiveRm("rm --recursive --force /home/agent")).toBe(true);
+    expect(isRecursiveRm("/bin/rm --force --recursive .")).toBe(true);
+    expect(isRecursiveRm("rm -r ~/workspace/old")).toBe(true);
+    expect(evaluateInvocation({ id: "1", tool: "bash", command: "rm -r -f /home/agent" }).needsApproval).toBe(true);
+    expect(evaluateInvocation({ id: "2", tool: "bash", command: "rm --recursive /home/agent/workspace" }).needsApproval).toBe(true);
+  });
+
   it("allows ordinary commands", () => {
     expect(evaluateInvocation({ id: "1", tool: "bash", command: "ls -la ~/workspace" }).needsApproval).toBe(false);
     expect(evaluateInvocation({ id: "2", tool: "bash", command: "curl https://example.com -o page.html" }).needsApproval).toBe(false);
     expect(evaluateInvocation({ id: "3", tool: "bash", command: "echo hello > notes.txt" }).needsApproval).toBe(false);
     expect(evaluateInvocation({ id: "4", tool: "bash", command: "rm notes.txt" }).needsApproval).toBe(false);
+    expect(evaluateInvocation({ id: "5", tool: "bash", command: "rm -f notes.txt" }).needsApproval).toBe(false);
+    expect(isRecursiveRm("rm --force notes.txt")).toBe(false);
+    expect(isRecursiveRm("rmdir leftover")).toBe(false);
   });
 
   it("flags typing payment details, allows normal typing", () => {

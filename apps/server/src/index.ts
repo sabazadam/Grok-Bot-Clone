@@ -9,6 +9,7 @@ import * as store from "./store.js";
 import * as service from "./agents/service.js";
 import { broadcast } from "./bus.js";
 import { startScheduler } from "./runtime/scheduler.js";
+import { isContainerSourceAddress } from "./net.js";
 
 async function main() {
   ensureDataDirs();
@@ -32,6 +33,12 @@ async function main() {
   const app = Fastify({ logger: { level: "info" }, bodyLimit: 120 * 1024 * 1024 });
   await app.register(cors, { origin: true });
   await app.register(websocket);
+  app.addHook("onRequest", async (req, reply) => {
+    if (req.url === "/health" || req.url.startsWith("/health?")) return;
+    if (isContainerSourceAddress(req.ip) || isContainerSourceAddress(req.socket.remoteAddress)) {
+      return reply.code(403).send({ error: "forbidden" });
+    }
+  });
 
   app.get("/health", async () => ({ ok: true, name: "grokbot-server", time: Date.now() }));
 

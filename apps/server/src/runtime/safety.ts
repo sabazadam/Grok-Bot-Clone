@@ -10,9 +10,25 @@ export interface SafetyVerdict {
   reason?: string;
 }
 
+/** True when a shell line invokes `rm` with a recursive flag (`-r`, `-rf`, `--recursive`, …). */
+export function isRecursiveRm(command: string): boolean {
+  const tokens = command.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < tokens.length; i++) {
+    const name = tokens[i]!.replace(/.*\//, "");
+    if (name !== "rm") continue;
+    for (const raw of tokens.slice(i + 1)) {
+      if (raw === "--") break;
+      if (!raw.startsWith("-")) continue;
+      if (raw === "--recursive" || raw.startsWith("--recursive=")) return true;
+      if (raw.startsWith("--")) continue;
+      if (/[rR]/.test(raw.slice(1))) return true;
+    }
+  }
+  return false;
+}
+
 /** Destructive / consequential shell patterns. */
 const RISKY_COMMAND_PATTERNS: { re: RegExp; label: string }[] = [
-  { re: /\brm\s+(-[a-zA-Z]*r[a-zA-Z]*f?|-[a-zA-Z]*f[a-zA-Z]*r)\b/, label: "recursive force-delete (rm -rf)" },
   { re: /\brm\s+.*(\/home\/agent\/workspace|\s~\/workspace)/, label: "deleting workspace files" },
   { re: /\bmkfs\b|\bdd\s+if=/, label: "disk-level operation" },
   { re: /\bshutdown\b|\breboot\b/, label: "shutting down the computer" },
@@ -30,6 +46,9 @@ const RISKY_TYPED_HINTS: { re: RegExp; label: string }[] = [
 
 export function evaluateInvocation(inv: ToolInvocation): SafetyVerdict {
   if (inv.tool === "bash") {
+    if (isRecursiveRm(inv.command)) {
+      return { needsApproval: true, reason: "Shell command looks consequential: recursive delete (rm -r / rm -rf)" };
+    }
     for (const { re, label } of RISKY_COMMAND_PATTERNS) {
       if (re.test(inv.command)) {
         return { needsApproval: true, reason: `Shell command looks consequential: ${label}` };
