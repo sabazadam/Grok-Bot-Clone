@@ -264,6 +264,40 @@ describe("agent store", () => {
     expect(store.rosterCount()).toBe(3);
   });
 
+  it("closes leftover in-flight work after a restart", () => {
+    const agent = makeAgent({ name: "Orphan" });
+    store.setAgentStatus(agent.id, "working");
+    const conv = store.ensureDirectConversation(agent.id);
+    const task = store.createTask(agent.id, conv.id, "research");
+    store.updateTask(task.id, { status: "running" });
+    store.createApproval({
+      conversationId: conv.id,
+      agentId: agent.id,
+      taskId: task.id,
+      actionJson: "{}",
+      actionDescription: "send email",
+      reason: "needs you",
+    });
+    const routine = store.createRoutine({
+      agentId: agent.id,
+      name: "Nightly",
+      prompt: "Check logs",
+      intervalMinutes: 60,
+    });
+    store.updateRoutine(routine.id, { lastStatus: "running" });
+
+    const closed = store.closeOrphanedWork();
+    expect(closed).toEqual({ tasks: 1, approvals: 1, routines: 1 });
+    expect(store.getTask(task.id)?.status).toBe("cancelled");
+    expect(store.listApprovalsByConversation(conv.id)[0]?.status).toBe("rejected");
+    expect(store.getRoutine(routine.id)?.lastStatus).toBe("failed");
+
+    store.setAgentStatus(agent.id, "working");
+    const changes = store.reconcileAgentStatuses();
+    expect(store.getAgent(agent.id)?.status).toBe("idle");
+    expect(changes.map((c) => c.agentId)).toContain(agent.id);
+  });
+
   it("persists plugins", () => {
     const plugin = store.createPlugin({
       name: "Status hook",

@@ -13,6 +13,12 @@ import { startScheduler } from "./runtime/scheduler.js";
 async function main() {
   ensureDataDirs();
   getDb();
+  const orphans = store.closeOrphanedWork();
+  if (orphans.tasks || orphans.approvals || orphans.routines) {
+    console.info(
+      `[startup] closed orphaned work: ${orphans.tasks} task(s), ${orphans.approvals} approval(s), ${orphans.routines} routine(s)`,
+    );
+  }
   service.reconcileStatuses();
   const live = liveModelConfig();
   if (live) {
