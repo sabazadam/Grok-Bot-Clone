@@ -17,8 +17,11 @@ const RISKY_COMMAND_PATTERNS: { re: RegExp; label: string }[] = [
   { re: /\bmkfs\b|\bdd\s+if=/, label: "disk-level operation" },
   { re: /\bshutdown\b|\breboot\b/, label: "shutting down the computer" },
   { re: /\bgit\s+push\b.*(--force|-f)\b/, label: "git force-push" },
-  { re: /\bcurl\b[^|;&]*(-X\s*(POST|PUT|DELETE)|--data|-d\s)/i, label: "sending data to an external service" },
-  { re: /\bwget\b[^|;&]*--post/i, label: "sending data to an external service" },
+  {
+    re: /\bcurl\b[^|;&]*(?:-X\s*(?:POST|PUT|PATCH|DELETE)|--data(?:-raw|-binary|-urlencode)?\b|--json\b|\s-[dFT]|--form\b|--upload-file\b)/i,
+    label: "sending data to an external service",
+  },
+  { re: /\bwget\b[^|;&]*(--post|--method=|--body-)/i, label: "sending data to an external service" },
   { re: /\bmail\b|\bsendmail\b|\bmutt\b/, label: "sending email" },
   { re: /\bsudo\b/, label: "privilege escalation" },
 ];
