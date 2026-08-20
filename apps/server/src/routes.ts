@@ -14,7 +14,7 @@ import { dispatchUserMessage, stopConversation } from "./runtime/orchestrator.js
 import { runRoutineNow } from "./runtime/scheduler.js";
 import { resolvePendingApproval } from "./runtime/approvals.js";
 import { cancelTask } from "./runtime/cancel.js";
-import { setTakeover } from "./runtime/takeover.js";
+import { setTakeover, clearAllTakeovers } from "./runtime/takeover.js";
 import { MAX_ATTACH_FILES, saveAttachments, uploadsDir } from "./uploads.js";
 import { startTeach, stopTeach, getTeachSession } from "./runtime/teach.js";
 import { forgetPlugin } from "./plugins/runtime.js";
@@ -204,6 +204,13 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     if (!body.success) return reply.code(400).send({ error: body.error.message });
     setTakeover(id, body.data.active);
     return { ok: true, active: body.data.active };
+  });
+
+  // A page reload loses the Take-over UI, but the in-memory flag used to stick
+  // and pause the agent forever. The UI calls this once on connect.
+  app.post("/api/takeovers/clear", async () => {
+    const released = clearAllTakeovers();
+    return { ok: true, released };
   });
 
   // ── memories ──────────────────────────────────────────────────────────

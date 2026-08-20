@@ -72,6 +72,7 @@ export const api = {
   restartComputer: (id: string) => req(`/api/agents/${id}/computer/restart`, { method: "POST" }),
   setTakeover: (id: string, active: boolean) =>
     req(`/api/agents/${id}/takeover`, { method: "POST", body: JSON.stringify({ active }) }),
+  clearTakeovers: () => req<{ ok: boolean; released: string[] }>("/api/takeovers/clear", { method: "POST" }),
   memories: (agentId: string) => req<MemoryEntry[]>(`/api/agents/${agentId}/memories`),
   deleteMemory: (id: string) => req(`/api/memories/${id}`, { method: "DELETE" }),
   conversations: () => req<Conversation[]>("/api/conversations"),

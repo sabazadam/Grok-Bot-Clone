@@ -4,6 +4,8 @@ import * as store from "../store.js";
 import { computerManager } from "../computer/manager.js";
 import { config } from "../config.js";
 import { broadcast } from "../bus.js";
+import { interruptAgents } from "../runtime/interrupt.js";
+import { setTakeover } from "../runtime/takeover.js";
 
 /** Push an agent's browser settings into its running container. */
 export async function syncBrowserConfig(agentId: string): Promise<void> {
@@ -67,8 +69,13 @@ export async function makeRoomForComputer(agentId: string): Promise<void> {
   protectedIds.add(agentId);
   const evicted = await computerManager.evictIdle(protectedIds);
   if (!evicted) return;
-  store.setAgentStatus(evicted, "off");
-  const agent = store.getAgent(evicted);
+  await announceComputerStopped(evicted);
+}
+
+/** Persist off + push status and computer info so the live desktop panel unsticks. */
+export async function announceComputerStopped(agentId: string): Promise<void> {
+  setStatus(agentId, "off");
+  const agent = store.getAgent(agentId);
   if (agent) broadcast({ type: "agent_updated", agent: await agentWithComputer(agent) });
 }
 
@@ -97,13 +104,14 @@ export async function provisionComputer(agentId: string): Promise<void> {
 }
 
 export async function stopComputer(agentId: string): Promise<void> {
+  setTakeover(agentId, false);
   await computerManager.stop(agentId);
-  setStatus(agentId, "off");
-  const agent = store.getAgent(agentId);
-  if (agent) broadcast({ type: "agent_updated", agent: await agentWithComputer(agent) });
+  await announceComputerStopped(agentId);
 }
 
 export async function deleteAgent(agentId: string, deleteData: boolean): Promise<void> {
+  interruptAgents([agentId]);
+  setTakeover(agentId, false);
   await computerManager.destroy(agentId, deleteData).catch(() => undefined);
   store.deleteAgent(agentId);
   broadcast({ type: "agent_deleted", agentId });

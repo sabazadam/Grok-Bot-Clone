@@ -233,6 +233,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         api.plugins().catch(() => [] as Plugin[]),
       ]);
       dispatch({ type: "init", config, agents, conversations, skills, routines, plugins });
+      // Reload drops the Take-over chrome; release any leftover pause so the
+      // agent is not stuck waiting for a session that no longer exists.
+      void api.clearTakeovers().catch(() => undefined);
     })();
   }, []);
 
