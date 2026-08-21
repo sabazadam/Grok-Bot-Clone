@@ -31,6 +31,32 @@ export function setStatus(agentId: string, status: AgentStatus): void {
   broadcast({ type: "agent_status", agentId, status });
 }
 
+export type ProvisionPhase = "begin" | "ready" | "failed";
+
+/**
+ * Background computer boot (create / duplicate / Start) must not overwrite an
+ * in-flight task. New-agent + first message is the common race: provision
+ * finishes waitHealthy after the runner has already marked the agent working,
+ * and used to flip it back to idle — which then lets makeRoomForComputer
+ * evict that desktop mid-task.
+ */
+export function nextProvisionStatus(
+  current: AgentStatus,
+  phase: ProvisionPhase,
+): AgentStatus | undefined {
+  if (current === "working" || current === "waiting_approval") return undefined;
+  if (phase === "begin") return "starting";
+  if (phase === "ready") return "idle";
+  return "error";
+}
+
+function applyProvisionStatus(agentId: string, phase: ProvisionPhase): void {
+  const current = store.getAgent(agentId)?.status;
+  if (!current) return;
+  const next = nextProvisionStatus(current, phase);
+  if (next) setStatus(agentId, next);
+}
+
 /** Clear stale waiting/working flags after a restart or a leftover seed. */
 export function reconcileStatuses(): { agentId: string; status: AgentStatus }[] {
   const changes = store.reconcileAgentStatuses();
@@ -73,14 +99,14 @@ export async function makeRoomForComputer(agentId: string): Promise<void> {
 }
 
 export async function provisionComputer(agentId: string): Promise<void> {
-  setStatus(agentId, "starting");
+  applyProvisionStatus(agentId, "begin");
   try {
     await makeRoomForComputer(agentId);
     await computerManager.ensureRunning(agentId);
     await syncBrowserConfig(agentId);
-    setStatus(agentId, "idle");
+    applyProvisionStatus(agentId, "ready");
   } catch (err) {
-    setStatus(agentId, "error");
+    applyProvisionStatus(agentId, "failed");
     const conv = store.directConversationForAgent(agentId);
     if (conv) {
       const msg = store.addMessage({
